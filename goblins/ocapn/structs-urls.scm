@@ -60,8 +60,12 @@
 
 ;; EG: "ocapn:m.onion.wy46gxdweyqn5m7ntzwlxinhdia2jjanlsh37gxklwhfec7yxqr4k3qd"
 
-(define-recordable ocapn-machine
-  (transport address hints))
+(define-recordable <ocapn-machine> make-ocapn-machine
+  ocapn-machine?
+  marshall::ocapn-machine unmarshall::ocapn-machine
+  (transport ocapn-machine-transport)
+  (address ocapn-machine-address)
+  (hints ocapn-machine-hints))
 
 ;; Ocapn swissnum URI:
 ;;
@@ -72,8 +76,11 @@
 ;;   <ocapn-sturdyref <ocapn-machine $transport $transport-address $transport-hints>
 ;;                    $swiss-num>
 
-(define-recordable ocapn-sturdyref
-  (machine swiss-num))
+(define-recordable <ocapn-sturdyref> make-ocapn-sturdyref
+  ocapn-sturdyref?
+  marshall::ocapn-sturdyref unmarshall::ocapn-sturdyref
+  (machine ocapn-sturdyref-machine)
+  (swiss-num ocapn-sturdyref-swiss-num))
 
 ;; Ocapn certificate URI:
 ;;
@@ -82,8 +89,11 @@
 ;;   <ocapn-cert <ocapn-machine $transport $transport-address $transport-hints>
 ;;               $cert>
 
-(define-recordable ocapn-cert
-  (machine certdata))
+(define-recordable <ocapn-cert> make-ocapn-cert
+  ocapn-cert?
+  marshall::ocapn-cert unmarshall::ocapn-cert
+  (machine ocapn-cert-machine)
+  (certdata ocapn-cert-certdata))
 
 ;; Ocapn bearer certificate union URI:
 ;;
@@ -96,9 +106,11 @@
 ;;                       $key-type
 ;;                       $private-key>
 
-(define-recordable ocapn-bearer-union
-  (cert key-type private-key))
-
+(define-recordable <ocapn-bearer-union> make-ocapn-bearer-union
+  ocapn-bearer-union?
+  marshall::ocapn-bearer-union unmarshall::ocapn-bearer-union
+  (cert ocapn-bearer-union-cert)
+  (certdata ocapn-bearer-union-certdata))
 
 ;; (define (ocapn-struct? obj)
 ;;   (or (ocapn-machine? obj)

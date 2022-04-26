@@ -81,7 +81,6 @@
 (define-recordable op:bootstrap
   (answer-pos resolve-me-desc))
 
-
 ;; Queue a delivery of verb(args..) to recip, discarding the outcome.
 (define-recordable op:deliver-only
   (;; Position in the table for the target

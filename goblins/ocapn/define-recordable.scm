@@ -38,41 +38,28 @@
 
 ;;; This defines a record that can also be serialized into a datastructure.
 ;;; Also defines marshall::<name> and unmarshall::<name> procedures 
-(define-syntax define-recordable
-  (lambda (x)
-    (define (id-append ctx . syms)
-      (datum->syntax ctx (apply symbol-append (map syntax->datum syms))))
-    (syntax-case x ()
-      ((_ name (field ...))
-       (and (identifier? #'name) (and-map identifier? #'(field ...)))
-       (with-syntax ((cstr #'name)
-                     ;; (cstr (id-append #'name #'make- #'name))
-                     (record-name
-                      (datum->syntax #'name
-                                     (symbol-append '< (syntax->datum #'name) '>)))
-                     (pred (id-append #'name #'name #'?))
-                     (marshall (id-append #'name #'marshall:: #'name))
-                     (unmarshall (id-append #'name #'unmarshall:: #'name))
-                     ((getter ...) (map (lambda (f)
-                                          (id-append f #'name #'- f))
-                                        #'(field ...))))
-         (with-ellipsis
-          :::
-          #'(begin
-              (define-record-type record-name
-                (cstr field :::)
-                pred
-                (field getter)
-                :::)
-              (define marshall
-                (cons (match-lambda
-                        (($ name field :::)
-                         #t)
-                        (_ #f))
-                      (match-lambda
-                        (($ name field :::)
-                         (make-syrec* (quote name) field :::)))))
-              (define unmarshall
-                (cons (lambda (label)
-                        (eq? label (quote name)))
-                      cstr)))))))))
+
+(define-syntax-rule (define-recordable record-name record-constructor
+                      record?
+                      marshall unmarshall
+                      (field field-accessor) ...)
+  (begin
+    (define-record-type record-name
+      (record-constructor field ...)
+      record?
+      (field field-accessor) ...)
+
+    (define marshall
+      (cons (match-lambda
+              (($ record-name field ...)
+               #t)
+              (_ #f))
+            (match-lambda
+              (($ record-name field ...)
+               (make-syrec* (quote record-name) field ...)))))
+
+    (define unmarshall
+      (cons (lambda (label)
+              (eq? label (quote record-name)))
+            record-constructor))))
+
