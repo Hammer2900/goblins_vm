@@ -43,6 +43,7 @@ SUFFIXES = .scm .go
 	$(AM_V_GEN)$(top_builddir)/pre-inst-env $(GUILE_TOOLS) compile $(GUILE_TARGET) $(GUILE_WARNINGS) -o "$@" "$<"
 
 SOURCES = goblins.scm \
+          goblins/ocapn/netlayer/fake.scm \
           goblins/ocapn/crypto-stubs.scm \
           goblins/ocapn/marshalling.scm \
           goblins/ocapn/structs-urls.scm \
@@ -73,13 +74,15 @@ SOURCES = goblins.scm \
           tests/utils.scm
 
 TESTS = tests/utils/test-bytes-stuff.scm \
+        tests/ocapn/netlayer/test-fake.scm \
+        tests/ocapn/test-structs-urls.scm \
         tests/actor-lib/test-ticker.scm \
         tests/actor-lib/test-ward.scm \
         tests/actor-lib/test-common.scm \
         tests/actor-lib/test-swappable.scm \
         tests/actor-lib/test-cell.scm \
         tests/actor-lib/test-joiners.scm \
-	      tests/ocapn/marshalling.scm \
+        tests/ocapn/marshalling.scm \
         tests/test-vat.scm \
         tests/test-inbox.scm \
         tests/test-ghash.scm \
