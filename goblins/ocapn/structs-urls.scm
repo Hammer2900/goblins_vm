@@ -15,16 +15,27 @@
 ;; TODO: Kinda misnamed just because copied straight from the racket code
 (define-module (goblins ocapn structs-urls)
   #:use-module (ice-9 match)
+  #:use-module (ice-9 regex)
+  :use-module  (srfi srfi-9)
   #:use-module (goblins ocapn define-recordable)
-  #:export (ocapn-machine
+  #:export (<ocapn-machine>
+	    ocapn-machine
             make-ocapn-machine
             ocapn-machine?
             ocapn-machine-transport
             ocapn-machine-address
             ocapn-machine-hints
+	    ocapn-struct?
+	    ocapn-struct->ocapn-machine
+	    uri->ocapn-machine
+	    uri->ocapn-sturdyref
+	    uri->ocapn-cert
+	    uri->ocapn-bearer-union
+	    same-machine-location?
             marshall::ocapn-machine
             unmarshall::ocapn-machine
 
+	    <ocapn-sturdyref>
             ocapn-sturdyref
             ocapn-sturdyref?
             make-ocapn-sturdyref
@@ -33,6 +44,7 @@
             marshall::ocapn-sturdyref
             unmarshall::ocapn-sturdyref
 
+	    <ocapn-cert>
             ocapn-cert
             ocapn-cert?
             make-ocapn-cert
@@ -41,6 +53,7 @@
             marshall::ocapn-cert
             unmarshall::ocapn-cert
 
+	    <ocapn-bearer-union>
             ocapn-bearer-union
             ocapn-bearer-union?
             ocapn-bearer-union-cert
@@ -59,7 +72,6 @@
 ;; . o O (Are hints really a good idea or needed anymore?)
 
 ;; EG: "ocapn:m.onion.wy46gxdweyqn5m7ntzwlxinhdia2jjanlsh37gxklwhfec7yxqr4k3qd"
-
 (define-recordable ocapn-machine
   (transport address hints))
 
@@ -100,93 +112,120 @@
   (cert key-type private-key))
 
 
-;; (define (ocapn-struct? obj)
-;;   (or (ocapn-machine? obj)
-;;       (ocapn-sturdyref? obj)
-;;       (ocapn-cert? obj)
-;;       (ocapn-bearer-union? obj)))
+;; Some of these are commented out as they're not supported, however
+;; we want to support them in future.
+(define (ocapn-struct? obj)
+  (or (ocapn-machine? obj)
+      (ocapn-sturdyref? obj)
+      (ocapn-bearer-union? obj)
+      (ocapn-cert? obj)))
 
-;; (define (ocapn-struct->ocapn-machine ocapn-struct)
-;;   (match ocapn-struct
-;;     [(? ocapn-machine?) ocapn-struct]
-;;     [($ ocapn-sturdyref ocapn-machine _sn) ocapn-machine]
-;;     [($ ocapn-cert ocapn-machine _cert) ocapn-machine]
-;;     [($ ocapn-bearer-union ($ ocapn-cert ocapn-machine _cert) _key-type _private-key)
-;;      ocapn-machine]))
+(define (ocapn-struct->ocapn-machine ocapn-struct)
+  (match ocapn-struct
+    [(? ocapn-machine?) ocapn-struct]
+    [($ <ocapn-sturdyref> ocapn-machine _sn) ocapn-machine]
+    [($ <ocapn-cert> ocapn-machine _cert) ocapn-machine]
+    [($ <ocapn-bearer-union> ($ <ocapn-cert> ocapn-machine _cert) _key-type _private-key)
+     ocapn-machine]))
 
 ;; ;; Checks for the equivalence between two ocapn-machine structs
 ;; ;; (including ocapn-machines nested in other ocapn-structs),
 ;; ;; ignoring hints
-;; (define (same-machine-location? ocapn-struct1 ocapn-struct2)
-;;   (define machine1 (ocapn-struct->ocapn-machine ocapn-struct1))
-;;   (define machine2 (ocapn-struct->ocapn-machine ocapn-struct2))
-;;   (match-let ([($ ocapn-machine m1-transport m1-address _m1-hints)
-;;                machine1]
-;;               [($ ocapn-machine m2-transport m2-address _m2-hints)
-;;                machine2])
-;;     (and (equal? m1-transport m2-transport)
-;;          (equal? m1-address m2-address))))
+(define (same-machine-location? ocapn-struct1 ocapn-struct2)
+  (define machine1 (ocapn-struct->ocapn-machine ocapn-struct1))
+  (define machine2 (ocapn-struct->ocapn-machine ocapn-struct2))
+  (match-let ((($ <ocapn-machine> m1-transport m1-address _m1-hints)
+               machine1)
+              (($ <ocapn-machine> m2-transport m2-address _m2-hints)
+               machine2))
+    (and (equal? m1-transport m2-transport)
+         (equal? m1-address m2-address))))
 
 
-;; (define (ocapn-url-pieces ocapn-url)
-;;   (match ocapn-url
-;;     [(url "ocapn" #f #f #f #f (list (path/param type-address-str '())
-;;                                     rest-path-params ...)
-;;           '() #f)
-;;      (define rest-paths (map path/param-path rest-path-params))
-;;      (define-values (ocapn-url-type netlayer-id address-str hints-str)
-;;        (match (string-split type-address-str ".")
-;;          [(list ocapn-url-type netlayer-id address-str hints-str)
-;;           (values ocapn-url-type
-;;                   (string->symbol netlayer-id)
-;;                   address-str hints-str)]
-;;          [(list ocapn-url-type netlayer-id address-str)
-;;           (values ocapn-url-type
-;;                   (string->symbol netlayer-id)
-;;                   address-str #f)]))
-;;      (define this-machine
-;;        (ocapn-machine netlayer-id address-str hints-str))
-     
-;;      (values ocapn-url-type this-machine rest-paths)]
-;;     [something-else
-;;      (error 'not-an-ocapn-url "Not an ocapn url: ~a" something-else)]))
+(define-record-type <ocapn-uri>
+  (make-ocapn-uri type transport address path)
+  ocapn-uri?
+  (type ocapn-uri-type)
+  (transport ocapn-uri-transport)
+  (address ocapn-uri-address)
+  (path ocapn-uri-path))
 
-;; (define (url->ocapn-struct ocapn-url)
-;;   (define-values (ocapn-url-type this-machine rest-paths)
-;;     (ocapn-url-pieces ocapn-url))
-;;   (match ocapn-url-type
-;;     ;; This is a machine type, so we're done
-;;     ["m" this-machine]
-;;     ["s"
-;;      (match-define (list encoded-swiss-num)
-;;                    rest-paths)
-;;      (ocapn-sturdyref this-machine (url-base64-decode encoded-swiss-num))]
-;;     ["c"
-;;      (match-define (list encoded-cert)
-;;                    rest-paths)
-;;      (define decoded-cert (syrup-decode (url-base64-decode encoded-cert)))
-;;      (ocapn-cert this-machine decoded-cert)]
-;;     ["u"
-;;      (match-define (list encoded-cert key-type-and-private-key)
-;;                    rest-paths)
-;;      (define decoded-cert (syrup-decode (url-base64-decode encoded-cert)))
-;;      (match-define (list key-type-str private-key-str)
-;;                    (string-split key-type-and-private-key "."))
-;;      (ocapn-bearer-union (ocapn-cert this-machine decoded-cert)
-;;                          (string->symbol key-type-str)
-;;                          (url-base64-decode private-key-str))])
+(define string->ocapn-uri
+  (let* ((type-pat "[A-z0-9]+")
+	 (transport-pat "[A-z0-9]+")
+	 (address-pat "[A-z0-9\\.]+")
+	 (path-pat ".*")
+	 (uri-pat
+	  (format #f "ocapn:(~a)\\.(~a)\\.(~a)[\\/]?(~a)"
+		  type-pat transport-pat address-pat path-pat))
+	 (uri-regex (make-regexp uri-pat)))
+    (lambda (uri)
+      (let ((m (regexp-exec uri-regex uri)))
+	(make-ocapn-uri
+	 (string->symbol (match:substring m 1))
+	 (string->symbol (match:substring m 2))
+	 (match:substring m 3)
+	 (match:substring m 4))))))
 
-;;   ;; way too lazy but the contracts do the right thing on these
-;;   ;; TODO: Except kind of not because it says "broke its own contract",
-;;   ;; a bit misleading
-;;   (define-syntax-rule (define-url->ocapn-something id to-something)
-;;     (define/contract (id ocapn-url)
-;;       (-> url? to-something)
-;;       (url->ocapn-struct ocapn-url))))
-;; (define-url->ocapn-something url->ocapn-machine ocapn-machine?)
-;; (define-url->ocapn-something url->ocapn-sturdyref ocapn-sturdyref?)
-;; (define-url->ocapn-something url->ocapn-cert ocapn-cert?)
-;; (define-url->ocapn-something url->ocapn-bearer-union ocapn-bearer-union?)
+(define (ocapn-uri->string uri)
+  (define machine-address
+    (string-append
+     "ocapn:"
+     (symbol->string (ocapn-uri-type uri))
+     "."
+     (ocapn-uri-transport uri)
+     "."
+     (ocapn-uri-address uri)))
+  (if (eq? (ocapn-uri-type uri) 'm)
+      machine-address
+      (string-append "/" (ocapn-uri-path uri))))
+
+
+(define (uri->ocapn-machine machine-address)
+  (define uri
+    (match machine-address
+      ((? string?) (string->ocapn-uri machine-address))
+      ((? ocapn-uri?) machine-address)
+      (_ (error "Unsupported type"))))
+  (ocapn-machine
+   (ocapn-uri-transport uri)
+   (ocapn-uri-address uri)
+   #f))
+
+(define (uri->ocapn-sturdyref studyref)
+  (let ((uri (string->ocapn-uri studyref)))
+    (when (string-null? (ocapn-uri-path uri))
+      (error (format #f "No swiss-num given for uri (~a)"
+		     (ocapn-uri->string uri))))
+    (ocapn-sturdyref
+     (uri->ocapn-machine uri)
+     (ocapn-uri-path uri))))
+
+(define (uri->ocapn-cert cert)
+  (let ((uri (string->ocapn-uri cert)))
+    (when (string-null? (ocapn-uri-path uri))
+      (error (format #f "No cert given for uri (~a)"
+		     (ocapn-uri->string uri))))
+    (ocapn-cert
+     (uri->ocapn-machine uri)
+     (ocapn-uri-path uri))))
+
+(define (uri->ocapn-bearer-union bearer-union)
+  (let ((uri (string->ocapn-uri bearer-union)))
+    (define union-parts
+      (string-split (ocapn-uri-path uri) #\/))
+    (define cert
+      (car union-parts))
+    (pk 'union-parts union-parts)
+    (define-values (key-type private-key)
+      (let ((parts (string-split (list-ref union-parts 1) #\.)))
+	(values (list-ref parts 0)
+		(list-ref parts 1))))
+
+    (ocapn-bearer-union
+     (ocapn-cert (uri->ocapn-machine uri) cert)
+     (string->symbol key-type)
+     private-key)))
 
 ;; (define (string->ocapn-machine str)
 ;;   (url->ocapn-machine (string->url str)))
