@@ -34,7 +34,8 @@
       (let ((current-fiber (@@ (fibers internal) current-fiber))
             (fiber-scheduler (@@ (fibers internal) fiber-scheduler)))
         (lambda ()
-          (fiber-scheduler (current-fiber)))))
+          ;; There's the possibility this returns #f.
+          (and=> (current-fiber) fiber-scheduler))))
     ;; Fibers 1.1.0
     (lambda _
       (@@ (fibers scheduler) current-scheduler))))
@@ -59,13 +60,21 @@ appropriate"
                   (%current-scheduler))
                 (define prev-sched
                   (atomic-box-compare-and-swap! %vat-sched #f this-sched))
-                (if prev-sched
-                    ;; someone else installed a scheduler in-between
-                    (put-message result-ch prev-sched)
-                    ;; our scheduler is the new one
-                    (begin
-                      (put-message result-ch this-sched)
-                      ;; since we're the new scheduler, run forever...
-                      (wait (make-condition))))))))
+                ;; A bug that happens in Fibers 1.0.0 sometimes... the 
+                (cond
+                 ;; someone else installed a scheduler in-between
+                 (prev-sched
+                  (put-message result-ch prev-sched))
+                 ;; FIBERS 1.0.0 BUG (seemingly?!)
+                 ;; In some situations current-fiber returns nothing confusingly.
+                 ;; The "workaround" is just... to do nothing, but not really
+                 ;; keep running either.
+                 ((not this-sched)
+                  (put-message result-ch #f))
+                 ;; our scheduler is the new one
+                 (else
+                  (put-message result-ch this-sched)
+                  ;; since we're the new scheduler, run forever...
+                  (wait (make-condition))))))))
           (get-message result-ch)))))
 
