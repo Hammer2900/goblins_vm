@@ -40,6 +40,7 @@
   #:use-module (rnrs bytevectors)
   #:use-module (rnrs io ports)
   #:use-module (fibers channels)
+  #:use-module (gcrypt pk-crypto)
   #:export (spawn-mycapn))
 
 ;;; Some crap to make this work in the port from Racket->Guile
@@ -913,14 +914,13 @@
   ;; ==============================
   (values captp-incoming-handler remote-bootstrap-vow))
 
-
 (define* (^coordinator bcom router our-location
                        intra-machine-warden intra-machine-incanter
-                       #:key [handoff-privkey
-                              'TODO-crypto
-                              #;(generate-private-key eddsa
-                              '((curve ed25519)))
-                              ]
+                       ;; #:key [handoff-privkey
+                       ;;        ;;'TODO-crypto
+                       ;;        (generate-private-key eddsa
+                       ;;        '((curve ed25519)))
+                       ;;       ]
                        ;; #:local-machine-location [local-machine-location #f]
                        )
   ;; counters used to increment how many handoff requests have been
@@ -932,23 +932,34 @@
   ;;   attack
   (define remote-handoff-count 0)
 
+  (define handoff-key-pair
+    (generate-key
+     (sexp->canonical-sexp
+      '(genkey (eddsa (curve Ed25519) (flags rfc6979))))))
+
+  (define handoff-privkey
+    (find-sexp-token handoff-key-pair 'private-key))
+  
   (define handoff-pubkey
-    #;(pk-key->public-only-key handoff-privkey)
-    'TODO-crypto)
+    (find-sexp-token handoff-key-pair 'private-key))
+    ;;'TODO-crypto)
 
   (define (get-handoff-pubkey)
-    #;(pk-key->datum handoff-pubkey 'rkt-public)
-    'TODO-crypto)
+    (canonical-sexp->sexp handoff-pubkey))
+    ;;'TODO-crypto)
 
   ;; TODO: maybe the hashing isn't necessary
   (define our-side-name
     (sha256d (syrup-encode (get-handoff-pubkey))))
 
+  (pk 'my-location our-location 'marshallers marshallers)
   (define our-location-sig
-    'TODO-crypto
-    #;(pk-sign handoff-privkey
-    (syrup-encode (record* 'my-location our-location)
-    #:marshallers marshallers)))
+    ;;'TODO-crypto
+    (sign
+     (syrup-encode
+      (make-syrec* 'my-location our-location)
+      #:marshallers marshallers)
+     handoff-privkey))
 
   (define core-beh
     (methods
