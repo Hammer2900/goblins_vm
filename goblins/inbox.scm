@@ -53,6 +53,7 @@
       (wrap-operation (wait-operation stop?)
                       (lambda (_) (set! keep-going? #f))))
     (while keep-going?
+      (pk 'inbox 'doing-stuff)
       (perform-operation
        (if next-one
            (choice-operation (deq-op) (enq-op) (stop-op))
@@ -61,4 +62,3 @@
   (spawn-fiber start-inbox-loop scheduler)
   ;; return inbox enqueue/dequeue channels, as well as stop operation
   (values enq-ch deq-ch stop?))
-

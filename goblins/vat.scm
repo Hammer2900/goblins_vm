@@ -163,17 +163,23 @@ Keywords:
   (define vat-connector
     (match-lambda*
       (('handle-message msg)
+       (pk 'handle-message msg 'running? (atomic-box-ref running?))
        ;; TODO: We should indicate to the procedure which calls this that
        ;; the attempt to send the message failed... so, return an 'ok
        ;; or 'failed message here?
        (when (atomic-box-ref running?)
-         (put-message enq-ch msg)))))
+         (put-message enq-ch msg))
+       (pk 'finished-handling-message))))
   (define actormap (make-actormap #:vat-connector vat-connector))
   (define (vat-loop)
     ;; Control: operations on the vat from someone who spawned it
     (define handle-vat-control
-      (match-lambda
+      ;;      (match-lambda
+      (lambda (arg)
+	(pk 'handle-vat-control arg)
+	(match arg
         ('halt
+	 (pk 'halting-vat)
          (atomic-box-set! running? #f))
         (('run thunk return-ch)
          (define-values (returned new-actormap new-msgs)
@@ -189,17 +195,20 @@ Keywords:
          (spawn-fiber
           (lambda ()
             (put-message return-ch returned))
-          scheduler))))
+          scheduler)))))
     ;; Connect: operations on the vat from the outside
     (define (handle-incoming-message msg)
+      (pk 'handle-incoming-message msg)
       (define-values (returned new-actormap new-msgs)
         (actormap-churn actormap msg))
       (dispatch-messages new-msgs)
       (match returned
         [#('ok rval)
          (transactormap-merge! new-actormap)]
-        [_ #f]))
+        [_ #f])
+      (pk 'incoming-message 'done))
     (while (atomic-box-ref running?)
+      (pk 'running (atomic-box-ref running?))
       (perform-operation
        (choice-operation (wrap-operation (get-operation control-ch)
                                          handle-vat-control)

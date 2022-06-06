@@ -33,14 +33,21 @@
 
 (define (make-message-reader ch)
   (lambda (unmarshallers)
-    (syrup-decode
-     (get-message ch)
-     #:unmarshallers unmarshallers)))
+    (get-message ch)))
+    ;; (define msg (get-message ch))
+    ;; (pk 'got msg)
+    ;; (syrup-decode
+    ;;  msg
+    ;;  #:unmarshallers unmarshallers)))
 (define (make-message-writer ch)
   (lambda (msg marshallers)
-    (define encoded
-      (syrup-encode msg #:marshallers marshallers))
-    (put-message ch encoded)))
+    (pk 'sending msg)
+    (put-message ch msg)))
+    ;; (pk 'out msg)
+    ;; (define encoded
+    ;;   (syrup-encode msg #:marshallers marshallers))
+    ;; (put-message ch encoded)))
+
 
 (define (^fake-netlayer _bcom our-name network new-conn-ch)
   (define our-location (make-ocapn-machine 'fake our-name #f))

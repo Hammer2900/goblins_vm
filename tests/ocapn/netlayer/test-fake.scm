@@ -10,41 +10,41 @@
 
 (test-begin "test-fake-netlayer")
 
-(pk 'before 'spawn-vat)
+;; (pk 'before 'spawn-vat)
 (define test-vat (spawn-vat))
-(pk 'after 'spawn-vat)
-;;(define am (make-whactormap))
+;; (pk 'after 'spawn-vat)
+;; ;;(define am (make-whactormap))
 (define test-channel (make-channel))
 
-;; Tests for the ^fake-network
+;; ;; Tests for the ^fake-network
 (define test-network
   (test-vat 'run (lambda () (spawn ^fake-network))))
 
-(test-error
- "Check connecting to a non-existing network fails"
- #t
- (test-vat 'run (lambda () ($ test-network 'connect-to "does-not-exist"))))
+;; (test-error
+;;  "Check connecting to a non-existing network fails"
+;;  #t
+;;  (test-vat 'run (lambda () ($ test-network 'connect-to "does-not-exist"))))
 
-(test-vat
- 'run
- (lambda ()
-   ($ test-network 'register "test" test-channel)
-   (define test-connection ($ test-network 'connect-to "test"))
+;; (test-vat
+;;  'run
+;;  (lambda ()
+;;    ($ test-network 'register "test" test-channel)
+;;    (define test-connection ($ test-network 'connect-to "test"))
 
-   (test-assert "Check we're getting back fibers channels"
-     (and (channel? (car test-connection))
-	  (channel? (cdr test-connection))))
+;;    (test-assert "Check we're getting back fibers channels"
+;;      (and (channel? (car test-connection))
+;; 	  (channel? (cdr test-connection))))
 
-   (define message (get-message test-channel))
-   (test-eq
-       "Check me->them channel is correct"
-     (car test-connection)
-     (car message))
+;;    (define message (get-message test-channel))
+;;    (test-eq
+;;        "Check me->them channel is correct"
+;;      (cdr test-connection)
+;;      (car message))
 
-   (test-eq
-       "Check them->me channel is correct"
-     (cdr test-connection)
-     (cdr message))))
+;;    (test-eq
+;;        "Check them->me channel is correct"
+;;      (car test-connection)
+;;      (cdr message))))
 
 ;; Tests for the ^fake-netlayer
 (define a-vat (spawn-vat))
@@ -54,33 +54,29 @@
 (define a-location (uri->ocapn-machine "ocapn:m.fake.a"))
 (define b-location (uri->ocapn-machine "ocapn:m.fake.b"))
 
-(pk 'v 1)
 (define a-netlayer
   (a-vat (lambda () (spawn ^fake-netlayer "a" test-network a-new-conn-ch))))
-(pk 'v 2)
 (define b-netlayer
   (b-vat (lambda () (spawn ^fake-netlayer "b" test-network b-new-conn-ch))))
-(pk 'v 3)
 
 (test-vat
  (lambda ()
    ($ test-network 'register "a" a-new-conn-ch)
    ($ test-network 'register "b" b-new-conn-ch)))
-(pk 'v 4)
 
 (define a-mycapn
   (a-vat (lambda () (spawn-mycapn (list a-netlayer)))))
 (define b-mycapn
   (b-vat (lambda () (spawn-mycapn (list b-netlayer)))))
 
-(define a->b-vow
-  (a-vat
-   (lambda ()
-     ($ a-mycapn 'connect-to-machine b-location))))
-(define b->a-vow
-  (b-vat
-   (lambda ()
-     ($ b-mycapn 'connect-to-machine a-location))))
+;; (define a->b-vow
+;;   (a-vat
+;;    (lambda ()
+;;      ($ a-mycapn 'connect-to-machine b-location))))
+;; (define b->a-vow
+;;   (b-vat
+;;    (lambda ()
+;;      ($ b-mycapn 'connect-to-machine a-location))))
 
 (define (^greeter _bcom my-name)
   (lambda (your-name)
@@ -108,6 +104,8 @@
 	 (lambda (err)
 	   (pk 'err err)
 	   (set! result `(broken ,err))))))
+  (sleep 1)
+  (pk 'slept 1)
   (sleep 1)
   (pk 'result result)
   (test-equal

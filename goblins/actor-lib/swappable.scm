@@ -30,6 +30,7 @@
 
   (define (^proxy _bcom)
     (lambda args
+      (pk 'proxying 'args args 'to ($ target))
       (apply $ ($ target) args)))
 
   (define proxy
