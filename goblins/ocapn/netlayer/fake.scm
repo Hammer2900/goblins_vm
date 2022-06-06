@@ -6,6 +6,7 @@
   #:use-module (goblins actor-lib common)
   #:use-module (goblins actor-lib methods)
   #:use-module (goblins ocapn structs-urls)
+  #:use-module (goblins contrib syrup)
   #:use-module (ice-9 match)
   #:use-module (ice-9 popen)
   #:export (^fake-network ^fake-netlayer))
@@ -42,7 +43,7 @@
     (put-message ch encoded)))
 
 (define (^fake-netlayer _bcom our-name network new-conn-ch)
-  (define our-location (ocapn-machine 'fake our-name #f))
+  (define our-location (make-ocapn-machine 'fake our-name #f))
   (define (start-listening conn-establisher)
     (define (listen)
       (define message-vow

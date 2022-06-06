@@ -16,11 +16,10 @@
 (define-module (goblins ocapn structs-urls)
   #:use-module (ice-9 match)
   #:use-module (ice-9 regex)
-  :use-module  (srfi srfi-9)
-  #:use-module (goblins ocapn define-recordable)
+  #:use-module (srfi srfi-9)
+  #:use-module (goblins ocapn marshalling)
   #:export (<ocapn-machine>
-	    ocapn-machine
-            make-ocapn-machine
+	    make-ocapn-machine
             ocapn-machine?
             ocapn-machine-transport
             ocapn-machine-address
@@ -36,32 +35,29 @@
             unmarshall::ocapn-machine
 
 	    <ocapn-sturdyref>
-            ocapn-sturdyref
+	    make-ocapn-sturdyref
             ocapn-sturdyref?
-            make-ocapn-sturdyref
             ocapn-sturdyref-machine
             ocapn-sturdyref-swiss-num
             marshall::ocapn-sturdyref
             unmarshall::ocapn-sturdyref
 
 	    <ocapn-cert>
-            ocapn-cert
+	    make-ocapn-cert
             ocapn-cert?
-            make-ocapn-cert
             ocapn-cert-machine
             ocapn-cert-certdata
             marshall::ocapn-cert
             unmarshall::ocapn-cert
 
-	    <ocapn-bearer-union>
-            ocapn-bearer-union
-            ocapn-bearer-union?
+            <ocapn-bearer-union>
+	    make-ocapn-bearer-union
+	    ocapn-bearer-union?
             ocapn-bearer-union-cert
             ocapn-bearer-union-key-type
             ocapn-bearer-union-private-key
             marshall::ocapn-bearer-union
             unmarshall::ocapn-bearer-union))
-
 
 ;; Ocapn machine type URI:
 ;;
@@ -72,8 +68,15 @@
 ;; . o O (Are hints really a good idea or needed anymore?)
 
 ;; EG: "ocapn:m.onion.wy46gxdweyqn5m7ntzwlxinhdia2jjanlsh37gxklwhfec7yxqr4k3qd"
-(define-recordable ocapn-machine
-  (transport address hints))
+(define-record-type <ocapn-machine>
+  (make-ocapn-machine transport address hints)
+  ocapn-machine?
+  (transport ocapn-machine-transport)
+  (address ocapn-machine-address)
+  (hints ocapn-machine-hints))
+
+(define-values (marshall::ocapn-machine unmarshall::ocapn-machine)
+  (make-marshallers <ocapn-machine> #:name 'ocapn-machine))
 
 ;; Ocapn swissnum URI:
 ;;
@@ -83,9 +86,14 @@
 ;;
 ;;   <ocapn-sturdyref <ocapn-machine $transport $transport-address $transport-hints>
 ;;                    $swiss-num>
+(define-record-type <ocapn-sturdyref>
+  (make-ocapn-sturdyref machine swiss-num)
+  ocapn-sturdyref?
+  (machine ocapn-sturdyref-machine)
+  (swiss-num ocapn-sturdyref-swiss-num))
 
-(define-recordable ocapn-sturdyref
-  (machine swiss-num))
+(define-values (marshall::ocapn-sturdyref unmarshall::ocapn-sturdyref)
+  (make-marshallers <ocapn-sturdyref> #:name 'ocapn-sturdyref))
 
 ;; Ocapn certificate URI:
 ;;
@@ -93,9 +101,14 @@
 ;;
 ;;   <ocapn-cert <ocapn-machine $transport $transport-address $transport-hints>
 ;;               $cert>
+(define-record-type <ocapn-cert>
+  (make-ocapn-cert machine certdata)
+  ocapn-cert?
+  (machine ocapn-cert-machine)
+  (certdata ocapn-cert-certdata))
 
-(define-recordable ocapn-cert
-  (machine certdata))
+(define-values (marshall::ocapn-cert unmarshall::ocapn-cert)
+  (make-marshallers <ocapn-cert> #:name 'ocapn-cert))
 
 ;; Ocapn bearer certificate union URI:
 ;;
@@ -107,9 +120,15 @@
 ;;                                   $cert>
 ;;                       $key-type
 ;;                       $private-key>
+(define-record-type <ocapn-bearer-union>
+  (make-ocapn-bearer-union cert key-type private-key)
+  ocapn-bearer-union?
+  (cert ocapn-bearer-union-cert)
+  (key-type ocapn-bearer-union-key-type)
+  (private-key ocapn-bearer-union-private-key))
 
-(define-recordable ocapn-bearer-union
-  (cert key-type private-key))
+(define-values (marshall::ocapn-bearer-union unmarshall::ocapn-bearer-union)
+  (make-marshallers <ocapn-bearer-union> #:name 'ocapn-bearer-union))
 
 
 ;; Some of these are commented out as they're not supported, however
@@ -187,7 +206,7 @@
       ((? string?) (string->ocapn-uri machine-address))
       ((? ocapn-uri?) machine-address)
       (_ (error "Unsupported type"))))
-  (ocapn-machine
+  (make-ocapn-machine
    (ocapn-uri-transport uri)
    (ocapn-uri-address uri)
    #f))
@@ -197,7 +216,7 @@
     (when (string-null? (ocapn-uri-path uri))
       (error (format #f "No swiss-num given for uri (~a)"
 		     (ocapn-uri->string uri))))
-    (ocapn-sturdyref
+    (make-ocapn-sturdyref
      (uri->ocapn-machine uri)
      (ocapn-uri-path uri))))
 
@@ -206,7 +225,7 @@
     (when (string-null? (ocapn-uri-path uri))
       (error (format #f "No cert given for uri (~a)"
 		     (ocapn-uri->string uri))))
-    (ocapn-cert
+    (make-ocapn-cert
      (uri->ocapn-machine uri)
      (ocapn-uri-path uri))))
 
@@ -222,163 +241,7 @@
 	(values (list-ref parts 0)
 		(list-ref parts 1))))
 
-    (ocapn-bearer-union
-     (ocapn-cert (uri->ocapn-machine uri) cert)
+    (make-ocapn-bearer-union
+     (make-ocapn-cert (uri->ocapn-machine uri) cert)
      (string->symbol key-type)
      private-key)))
-
-;; (define (string->ocapn-machine str)
-;;   (url->ocapn-machine (string->url str)))
-;; (define (string->ocapn-sturdyref str)
-;;   (url->ocapn-sturdyref (string->url str)))
-;; (define (string->ocapn-cert str)
-;;   (url->ocapn-cert (string->url str)))
-;; (define (string->ocapn-bearer-union str)
-;;   (url->ocapn-bearer-union (string->url str)))
-;; (define (string->ocapn-struct str)
-;;   (url->ocapn-struct (string->url str)))
-
-;; (define (ocapn-machine->string machine)
-;;   (url->string (ocapn-machine->url machine)))
-;; (define (ocapn-sturdyref->string sturdyref)
-;;   (url->string (ocapn-sturdyref->url sturdyref)))
-;; (define (ocapn-cert->string cert)
-;;   (url->string (ocapn-cert->url cert)))
-;; (define (ocapn-bearer-union->string bearer-union)
-;;   (url->string (ocapn-bearer-union->url bearer-union)))
-
-;; ;; helper procedure for the next two
-;; (define (ocapn-machine->address-str machine)
-;;   (match machine
-;;     [(ocapn-machine transport address hints)
-;;      (if hints
-;;          (format "~a.~a.~a" transport address hints)
-;;          (format "~a.~a" transport address))]))
-
-;; (define (ocapn-machine->url machine)
-;;   (define address-str (ocapn-machine->address-str machine))
-;;   (url "ocapn" #f #f #f #f
-;;        (list (path/param (string-append "m." address-str) '()))
-;;        '() #f))
-
-;; (define (ocapn-sturdyref->url sturdyref)
-;;   (match sturdyref
-;;     [(ocapn-sturdyref machine swiss-num)
-;;      (define address-str (ocapn-machine->address-str machine))
-;;      (url "ocapn" #f #f #f #f
-;;           (list (path/param (string-append "s." address-str) '())
-;;                 (path/param (url-base64-encode swiss-num) '()))
-;;           '() #f)]))
-
-;; (define (ocapn-cert->url cert)
-;;   (error "TODO: implement ocapn-cert->url"))
-
-;; (define (ocapn-bearer-union->url bearer-union)
-;;   (error "TODO: implement ocapn-bearer-union->url"))
-
-;; (define (ocapn-url? x)
-;;   (and (url? x)
-;;        (equal? (url-scheme x) "ocapn")))
-
-;; (define-syntax-rule (define-ocapn-url-checker id prefix)
-;;   (define (id x)
-;;     (match x
-;;       [(url "ocapn" #f #f #f #f (cons (path/param type-address '())
-;;                                       _other-paths)
-;;             '() #f)
-;;        (string-prefix? type-address prefix)]
-;;       [_ #f])))
-
-;; (define-ocapn-url-checker ocapn-machine-url? "m.")
-;; (define-ocapn-url-checker ocapn-sturdyref-url? "s.")
-;; (define-ocapn-url-checker ocapn-cert-url? "c.")
-;; (define-ocapn-url-checker ocapn-bearer-union-url? "u.")
-
-
-
-;; (module+ test
-;;   (require rackunit)
-
-;;   (test-equal?
-;;    "url->ocapn-machine, no hints"
-;;    (url->ocapn-machine
-;;     (string->url "ocapn:m.onion.wy46gxdweyqn5m7ntzwlxinhdia2jjanlsh37gxklwhfec7yxqr4k3qd"))
-;;    (ocapn-machine 'onion
-;;                   "wy46gxdweyqn5m7ntzwlxinhdia2jjanlsh37gxklwhfec7yxqr4k3qd"
-;;                   #f))
-
-;;   (test-equal?
-;;    "url->ocapn-machine, with hints"
-;;    (string->ocapn-machine
-;;     "ocapn:m.foo.wy46gxdweyqn5m7ntzwlxinhdia2jjanlsh37gxklwhfec7yxqr4k3qd.blablabla")
-;;    (ocapn-machine 'foo
-;;                   "wy46gxdweyqn5m7ntzwlxinhdia2jjanlsh37gxklwhfec7yxqr4k3qd"
-;;                   "blablabla"))
-
-;;   (test-equal?
-;;    "url->ocapn-sturdyref"
-;;    (url->ocapn-sturdyref (string->url "ocapn:s.onion.wy46gxdweyqn5m7ntzwlxinhdia2jjanlsh37gxklwhfec7yxqr4k3qd/eQjP4nR28ffX5eoNCK5DWH6DT_d7BIqD3-My459CUbU"))
-;;    (ocapn-sturdyref
-;;     (ocapn-machine 'onion
-;;                    "wy46gxdweyqn5m7ntzwlxinhdia2jjanlsh37gxklwhfec7yxqr4k3qd"
-;;                    #f)
-;;     #"y\b\317\342tv\361\367\327\345\352\r\b\256CX~\203O\367{\4\212\203\337\3432\343\237BQ\265"))
-
-;;   (test-equal?
-;;    "ocapn-machine->url, no hints"
-;;    (ocapn-machine->url
-;;     (ocapn-machine 'onion
-;;                    "wy46gxdweyqn5m7ntzwlxinhdia2jjanlsh37gxklwhfec7yxqr4k3qd"
-;;                    #f))
-;;    (string->url "ocapn:m.onion.wy46gxdweyqn5m7ntzwlxinhdia2jjanlsh37gxklwhfec7yxqr4k3qd"))
-
-;;   (test-equal?
-;;    "ocapn-machine->url, with hints"
-;;    (ocapn-machine->url
-;;     (ocapn-machine 'onion
-;;                    "wy46gxdweyqn5m7ntzwlxinhdia2jjanlsh37gxklwhfec7yxqr4k3qd"
-;;                    "hintyhint"))
-;;    (string->url "ocapn:m.onion.wy46gxdweyqn5m7ntzwlxinhdia2jjanlsh37gxklwhfec7yxqr4k3qd.hintyhint"))
-
-;;   (test-equal?
-;;    "ocapn-sturdyref->url"
-;;    (ocapn-sturdyref->url
-;;     (ocapn-sturdyref
-;;      (ocapn-machine 'onion
-;;                     "wy46gxdweyqn5m7ntzwlxinhdia2jjanlsh37gxklwhfec7yxqr4k3qd"
-;;                     #f)
-;;      #"y\b\317\342tv\361\367\327\345\352\r\b\256CX~\203O\367{\4\212\203\337\3432\343\237BQ\265"))
-;;    (string->url "ocapn:s.onion.wy46gxdweyqn5m7ntzwlxinhdia2jjanlsh37gxklwhfec7yxqr4k3qd/eQjP4nR28ffX5eoNCK5DWH6DT_d7BIqD3-My459CUbU"))
-
-;;   (check-true
-;;    (ocapn-machine-url? (string->url "ocapn:m.onion.wy46gxdweyqn5m7ntzwlxinhdia2jjanlsh37gxklwhfec7yxqr4k3qd")))
-;;   (check-true
-;;    (ocapn-sturdyref-url? (string->url "ocapn:s.onion.wy46gxdweyqn5m7ntzwlxinhdia2jjanlsh37gxklwhfec7yxqr4k3qd/eQjP4nR28ffX5eoNCK5DWH6DT_d7BIqD3-My459CUbU")))
-;;   (check-true
-;;    (ocapn-cert-url? (string->url "ocapn:c.onion.wy46gxdweyqn5m7ntzwlxinhdia2jjanlsh37gxklwhfec7yxqr4k3qd/PDknc29tZS1jZXJ0NCd3aXRoNCdzb21lNCdkYXRhPg")))
-;;   (check-true
-;;    (ocapn-bearer-union-url? (string->url "ocapn:u.onion.wy46gxdweyqn5m7ntzwlxinhdia2jjanlsh37gxklwhfec7yxqr4k3qd/PDknc29tZS1jZXJ0NCd3aXRoNCdzb21lNCdkYXRhPg/fake.IPu0dfs0j-uBRbNgF0gc6zTH2UGujJ-SLyAlhAABSW0")))
-;;   (check-false
-;;    (ocapn-sturdyref-url? (string->url "ocapn:m.onion.wy46gxdweyqn5m7ntzwlxinhdia2jjanlsh37gxklwhfec7yxqr4k3qd")))
-
-;;   (check-true
-;;    (same-machine-location?
-;;     (string->ocapn-machine "ocapn:m.testnet.foo")
-;;     (string->ocapn-machine "ocapn:m.testnet.foo.blahblah")))
-;;   (check-false
-;;    (same-machine-location?
-;;     (string->ocapn-machine "ocapn:m.testnet.foo")
-;;     (string->ocapn-machine "ocapn:m.testnet.bar")))
-;;   (check-false
-;;    (same-machine-location?
-;;     (string->ocapn-machine "ocapn:m.testnet.foo")
-;;     (string->ocapn-machine "ocapn:m.othernet.foo")))
-;;   (check-true
-;;    (same-machine-location?
-;;     (string->ocapn-machine "ocapn:m.testnet.foo")
-;;     (string->ocapn-sturdyref "ocapn:s.testnet.foo/d1607782-3c39-463f-baae-408753681a91")))
-;;   (check-false
-;;    (same-machine-location?
-;;     (string->ocapn-machine "ocapn:m.testnet.foo")
-;;     (string->ocapn-sturdyref "ocapn:s.testnet.bar/d1607782-3c39-463f-baae-408753681a91"))))
-;; )
