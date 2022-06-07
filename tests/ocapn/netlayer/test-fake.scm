@@ -11,7 +11,7 @@
 (test-begin "test-fake-netlayer")
 
 ;; (pk 'before 'spawn-vat)
-(define test-vat (spawn-vat))
+(define test-vat (spawn-vat #:name "test-vat"))
 ;; (pk 'after 'spawn-vat)
 ;; ;;(define am (make-whactormap))
 (define test-channel (make-channel))
@@ -47,8 +47,8 @@
 ;;      (cdr message))))
 
 ;; Tests for the ^fake-netlayer
-(define a-vat (spawn-vat))
-(define b-vat (spawn-vat))
+(define a-vat (spawn-vat #:name "a-vat"))
+(define b-vat (spawn-vat #:name "b-vat"))
 (define a-new-conn-ch (make-channel))
 (define b-new-conn-ch (make-channel))
 (define a-location (uri->ocapn-machine "ocapn:m.fake.a"))

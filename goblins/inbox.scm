@@ -23,7 +23,7 @@
   ;; #:use-module (ice-9 atomic)
   #:export (spawn-delivery-agent))
 
-(define* (spawn-delivery-agent #:key scheduler)
+(define* (spawn-delivery-agent name #:key scheduler)
   (define enq-ch (make-channel))
   (define deq-ch (make-channel))
   (define stop? (make-condition))
@@ -46,6 +46,7 @@
        ;; and pull next-one off the back-queue, if appropriate
        ;; (or indicate that there *is* no next-one...)
        (lambda _
+	 (pk 'name name 'deq-op next-one)
          (if (q-empty? back-queue)
              (set! next-one #f)
              (set! next-one (deq! back-queue))))))
@@ -53,7 +54,7 @@
       (wrap-operation (wait-operation stop?)
                       (lambda (_) (set! keep-going? #f))))
     (while keep-going?
-      (pk 'inbox 'doing-stuff)
+      (pk 'name name 'inbox 'doing-stuff)
       (perform-operation
        (if next-one
            (choice-operation (deq-op) (enq-op) (stop-op))

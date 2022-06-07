@@ -132,10 +132,17 @@
                  (current-error-port %base-error-port))
     (proc)))
 
+(define (generate-random-vat-name)
+  (set! *random-state* (random-state-from-platform))
+  (apply string
+	 (map
+	  (lambda _ (integer->char (+ 65 (random 26))))
+	  (iota 5)))) ;; length.
+
 ;; TODO: An explicit 'halt message isn't as ideal as vats which auto-gc.
 ;; But that is probably possible... we could possibly set up a fializer
 ;; that is attached to the vat-control-ch and vat-connector of this vat.
-(define* (spawn-vat-fiber #:key (control-ch (make-channel))
+(define* (spawn-vat-fiber name #:key (control-ch (make-channel))
                           (scheduler (default-vat-scheduler))
                           (dynamic-wrap port-redirect-dynamic-wrap))
   "Spawns a fiber for this vat and returns a channel by which
@@ -154,7 +161,7 @@ Keywords:
    screwing up things up."
   (define running? (make-atomic-box #t))
   (define-values (enq-ch deq-ch stop?)
-    (spawn-delivery-agent #:scheduler scheduler))
+    (spawn-delivery-agent name #:scheduler scheduler))
   ;; TODO: Maybe the vat connectors can just be channels sometimes?
   ;; That would simplify this dramatically.  In fact if 'handle-message
   ;; remains the only message, it could just be the enq-ch?
@@ -163,23 +170,21 @@ Keywords:
   (define vat-connector
     (match-lambda*
       (('handle-message msg)
-       (pk 'handle-message msg 'running? (atomic-box-ref running?))
+       (pk 'vat name 'vat-connector 'handle-message msg)
        ;; TODO: We should indicate to the procedure which calls this that
        ;; the attempt to send the message failed... so, return an 'ok
        ;; or 'failed message here?
        (when (atomic-box-ref running?)
-         (put-message enq-ch msg))
-       (pk 'finished-handling-message))))
+         (put-message enq-ch msg)))))
   (define actormap (make-actormap #:vat-connector vat-connector))
   (define (vat-loop)
     ;; Control: operations on the vat from someone who spawned it
     (define handle-vat-control
       ;;      (match-lambda
       (lambda (arg)
-	(pk 'handle-vat-control arg)
+	(pk 'vat name 'handle-vat-control arg)
 	(match arg
         ('halt
-	 (pk 'halting-vat)
          (atomic-box-set! running? #f))
         (('run thunk return-ch)
          (define-values (returned new-actormap new-msgs)
@@ -198,7 +203,7 @@ Keywords:
           scheduler)))))
     ;; Connect: operations on the vat from the outside
     (define (handle-incoming-message msg)
-      (pk 'handle-incoming-message msg)
+      (pk 'vat name 'handle-incoming-message msg)
       (define-values (returned new-actormap new-msgs)
         (actormap-churn actormap msg))
       (dispatch-messages new-msgs)
@@ -206,14 +211,15 @@ Keywords:
         [#('ok rval)
          (transactormap-merge! new-actormap)]
         [_ #f])
-      (pk 'incoming-message 'done))
+      (pk 'vat name 'incoming-message 'done))
     (while (atomic-box-ref running?)
-      (pk 'running (atomic-box-ref running?))
+      (pk 'vat name 'running (atomic-box-ref running?))
       (perform-operation
        (choice-operation (wrap-operation (get-operation control-ch)
                                          handle-vat-control)
                          (wrap-operation (get-operation deq-ch)
-                                         handle-incoming-message)))))
+                                         handle-incoming-message)))
+      (pk 'vat name 'finished-op)))
   ;; Wrap vat spawning in "ambient advice", allowing an opportunity
   ;; to set up parameters, etc
   (define _dynamic-wrap
@@ -221,13 +227,13 @@ Keywords:
   (_dynamic-wrap (lambda () (spawn-fiber vat-loop scheduler)))
   running?)
 
-(define* (spawn-vat-proc #:key
+(define* (spawn-vat-proc name #:key
                          (control-ch (make-channel))
                          (dynamic-wrap port-redirect-dynamic-wrap))
   "Like spawn-vat-fiber except returns a convenient procedure which abstracts
 over some of the communication aspects of controlling the vat."
   (define running?
-    (spawn-vat-fiber #:control-ch control-ch))
+    (spawn-vat-fiber name #:control-ch control-ch))
   (define vat-controller
     (match-lambda*
       ((or ((? procedure? thunk)) ('run (? procedure? thunk)))
@@ -260,15 +266,16 @@ over some of the communication aspects of controlling the vat."
 (define-syntax-rule (fibrous body ...)
   (spawn-fibrous-vow (lambda () body ...)))
 
-(define (spawn-vat)
-  (let* ((result-ch (make-channel))
+(define* (spawn-vat #:key (name #f))
+  (let* ((name (or name (generate-random-vat-name)))
+	 (result-ch (make-channel))
          (vat-halt? (make-condition))
          (vat-thread
           (call-with-new-thread
            (lambda ()
              (run-fibers
               (lambda ()
-                (define a-vat (spawn-vat-proc))
+                (define a-vat (spawn-vat-proc name))
                 (put-message result-ch a-vat)
                 (wait vat-halt?))))))
          (new-vat  ; vat controller procedure
