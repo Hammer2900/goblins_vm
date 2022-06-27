@@ -30,15 +30,19 @@
 
 (package
   (name "guile-goblins")
-  (version "0.6-pre")
+  (version "0.9-pre")
   (source (local-file (dirname (current-filename))
                       #:recursive? #t
                       #:select? keep-file?))
   (build-system gnu-build-system)
   (arguments
-   (list
+   `(#:phases
+     (modify-phases %standard-phases
+       (replace 'bootstrap
+         (lambda _
+           (invoke "autoreconf" "-vif"))))
      #:make-flags
-     #~(list "GUILE_AUTO_COMPILE=0")))
+     ,#~(list "GUILE_AUTO_COMPILE=0")))
   (native-inputs
    (list
      autoconf

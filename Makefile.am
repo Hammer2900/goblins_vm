@@ -1,4 +1,12 @@
-
+## This file is waived into the public domain, as-is, no warranty provided.
+##
+## If the public domain doesn't exist where you live, consider
+## this a license which waives all copyright and neighboring intellectual
+## restrictions laws mechanisms, to the fullest extent possible by law,
+## as-is, no warranty provided.
+##
+## No attribution is required and you are free to copy-paste and munge
+## into your own project.
 
 bin_SCRIPTS = 
 
@@ -32,7 +40,7 @@ EXTRA_DIST = $(SOURCES) $(NOCOMP_SOURCES)
 GUILE_WARNINGS = -Wunbound-variable -Warity-mismatch -Wformat
 SUFFIXES = .scm .go
 .scm.go:
-	$(AM_V_GEN)$(top_builddir)/pre-inst-env $(GUILE_TOOLS) compile $(GUILE_WARNINGS) -o "$@" "$<"
+	$(AM_V_GEN)$(top_builddir)/pre-inst-env $(GUILE_TOOLS) compile $(GUILE_TARGET) $(GUILE_WARNINGS) -o "$@" "$<"
 
 SOURCES = goblins.scm \
 	  goblins/ocapn/netlayer/fake.scm \
