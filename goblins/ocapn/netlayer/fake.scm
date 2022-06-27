@@ -3,6 +3,7 @@
   #:use-module (fibers channels)
   #:use-module ((goblins core) #:renamer (lambda (x) (if (eq? x '$) '$C x)))
   #:use-module (goblins vat)
+  #:use-module (goblins inbox)
   #:use-module (goblins actor-lib common)
   #:use-module (goblins actor-lib methods)
   #:use-module (goblins ocapn structs-urls)
@@ -32,17 +33,31 @@
     (cons me->them them->me)]))
 
 (define (make-message-reader ch)
+  (define-values (enq-ch deq-ch stop)
+    (spawn-delivery-agent "make-message-writer"))
+
+  (spawn-fiber
+   (lambda ()
+     (put-message enq-ch (get-message ch))))
+
   (lambda (unmarshallers)
-    (get-message ch)))
+    (get-message deq-ch)))
     ;; (define msg (get-message ch))
     ;; (pk 'got msg)
     ;; (syrup-decode
     ;;  msg
     ;;  #:unmarshallers unmarshallers)))
 (define (make-message-writer ch)
+  (define-values (enq-ch deq-ch stop)
+    (spawn-delivery-agent "make-message-writer"))
+
+  (spawn-fiber
+   (lambda ()
+     (define msg (get-message deq-ch))
+     (put-message ch msg)))
+
   (lambda (msg marshallers)
-    (pk 'sending msg)
-    (put-message ch msg)))
+    (put-message enq-ch msg)))
     ;; (pk 'out msg)
     ;; (define encoded
     ;;   (syrup-encode msg #:marshallers marshallers))
