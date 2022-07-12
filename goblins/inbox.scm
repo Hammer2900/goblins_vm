@@ -23,7 +23,7 @@
   ;; #:use-module (ice-9 atomic)
   #:export (spawn-delivery-agent))
 
-(define* (spawn-delivery-agent name #:key scheduler)
+(define* (spawn-delivery-agent #:optional name #:key scheduler)
   (define enq-ch (make-channel))
   (define deq-ch (make-channel))
   (define stop? (make-condition))
