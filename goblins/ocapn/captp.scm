@@ -1489,9 +1489,9 @@
           ;; TODO: Shouldn't the netlayer actually interpret this message
           ;;   before it gets here?  Ie, at this stage, we're already
           ;;   "confident" this is from the right location
-          [($ <mtp:op:start-session> remote-encoded-pubkey
-	                             claimed-remote-location
-                                     ;;(? ocapn-machine? claimed-remote-location)
+          [($ <mtp:op:start-session> (and remote-encoded-pubkey
+                                          ('eddsa 'public 'ed25519 _))
+	                             (? ocapn-machine? claimed-remote-location)
                                      encoded-remote-location-sig)
 	   (pk 'setup 'v -1)
            (define remote-handoff-pubkey
