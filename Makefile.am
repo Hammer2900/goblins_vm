@@ -78,6 +78,7 @@ TESTS = tests/utils/test-bytes-stuff.scm \
         tests/actor-lib/test-common.scm \
         tests/actor-lib/test-swappable.scm \
         tests/actor-lib/test-cell.scm \
+        tests/contrib/test-syrup.scm \
 	tests/ocapn/marshalling.scm \
         tests/test-vat.scm \
         tests/test-inbox.scm \
