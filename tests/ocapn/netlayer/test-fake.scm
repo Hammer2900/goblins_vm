@@ -98,19 +98,15 @@
      (define bob-vow (<- a-mycapn 'enliven bob-locator-sref))
      (on (<- bob-vow "Arthur")
 	 (lambda (response)
-	   (pk 'response response)
 	   (set! result `(fulfilled ,response)))
 	 #:catch
 	 (lambda (err)
-	   (pk 'err err)
 	   (set! result `(broken ,err))))))
   (sleep 1)
-  (pk 'slept 1)
   (sleep 1)
-  (pk 'result result)
   (test-equal
       "Able to enliven a far sturdyref and using it"
-    '(fullfilled "Hello Arthor, my name is Bob!")
+    '(fulfilled "Hello Arthur, my name is Bob!")
     result))
 
 ;; TODO: port the final test over.
