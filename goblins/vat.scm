@@ -170,7 +170,6 @@ Keywords:
   (define vat-connector
     (match-lambda*
       (('handle-message msg)
-       (pk 'vat name 'vat-connector 'handle-message msg)
        ;; TODO: We should indicate to the procedure which calls this that
        ;; the attempt to send the message failed... so, return an 'ok
        ;; or 'failed message here?
@@ -182,7 +181,6 @@ Keywords:
     (define handle-vat-control
       ;;      (match-lambda
       (lambda (arg)
-	(pk 'vat name 'handle-vat-control arg)
 	(match arg
         ('halt
          (atomic-box-set! running? #f))
@@ -203,23 +201,19 @@ Keywords:
           scheduler)))))
     ;; Connect: operations on the vat from the outside
     (define (handle-incoming-message msg)
-      (pk 'vat name 'handle-incoming-message msg)
       (define-values (returned new-actormap new-msgs)
         (actormap-churn actormap msg))
       (dispatch-messages new-msgs)
       (match returned
         [#('ok rval)
          (transactormap-merge! new-actormap)]
-        [_ #f])
-      (pk 'vat name 'incoming-message 'done))
+        [_ #f]))
     (while (atomic-box-ref running?)
-      (pk 'vat name 'running (atomic-box-ref running?))
       (perform-operation
        (choice-operation (wrap-operation (get-operation control-ch)
                                          handle-vat-control)
                          (wrap-operation (get-operation deq-ch)
-                                         handle-incoming-message)))
-      (pk 'vat name 'finished-op)))
+                                         handle-incoming-message)))))
   ;; Wrap vat spawning in "ambient advice", allowing an opportunity
   ;; to set up parameters, etc
   (define _dynamic-wrap

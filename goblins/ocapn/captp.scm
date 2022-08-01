@@ -813,7 +813,6 @@
 
   (define (^captp-incoming-handler bcom)
     (lambda (msg)
-      (pk 'captp-incoming-handler 'msg msg)
       (unless running?
         (error 'captp-breakage "Captp session is no longer running but got ~a"
                msg))
@@ -1461,7 +1460,6 @@
      ;; TODO: Should this still be an exposed method?  Maybe it's something only
      ;; the ^connection-establisher should call...
      [(new-connection netlayer netlayer-name read-message write-message)
-      (pk 'new-connect netlayer-name)
       (define-values (captp-outgoing-enq-ch captp-outgoing-deq-ch captp-outgoing-stop?)
         (spawn-delivery-agent "~captp~"))
       (define (send-to-remote msg)
