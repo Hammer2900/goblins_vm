@@ -1538,50 +1538,41 @@
 
            (define remote-location claimed-remote-location)
 
-	   (pk 'setup 'v 1)
            ;; Now use it to finish initializing the coordinator
            ($C coordinator 'install-remote-key
                remote-encoded-pubkey
                remote-handoff-pubkey
                remote-location)
 
-	   (pk 'setup 'v 2)
            (define local-bootstrap-obj
              (if custom-bootstrap
                  (custom-bootstrap ^bootstrap coordinator)
                  (spawn ^bootstrap coordinator)))
 
-	   (pk 'setup 'v 3)
            ;; and finally we can actually kick off setting up the rest
            ;; of the connection
            (define-values (captp-incoming-handler remote-bootstrap-vow)
              (setup-captp-conn send-to-remote coordinator
                                local-bootstrap-obj
                                intra-machine-warden intra-machine-incanter))
-	   (pk 'setup 'v 4)
            ;; Fulfill the meta-bootstrap-promise with the promise that
            ;; setup-captp-conn gave us
            ($C meta-bootstrap-resolver 'fulfill remote-bootstrap-vow)
-	   (pk 'setup 'v 5)
            ;; And set things up so that the incoming-forwarder now goes
            ;; to the captp-incoming-handler
            (incoming-swap captp-incoming-handler)
-	   (pk 'setup 'v 6)
 
            ;; TODO: Deal with duplicate sessions and also "crossed connections"
 
            ;; And now install in the open sessions in the directory
            (define session-name
              ($C coordinator 'get-session-name))
-	   (pk 'setup 'v 7)
            ($C locations->open-session-names 'set remote-location session-name)
-	   (pk 'setup 'v 8)
            ($C open-session-names->sessionmeta 'set
                session-name
                (make-sessionmeta remote-location
                                  local-bootstrap-obj remote-bootstrap-vow
                                  coordinator session-name))
-	   (pk 'setup 'v 9)
            _void]))
 
       (define-values (incoming-forwarder incoming-swap)
