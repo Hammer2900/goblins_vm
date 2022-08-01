@@ -1499,7 +1499,6 @@
                  ('eddsa 'public 'ed25519 _))
 	      (? ocapn-machine? claimed-remote-location)
               encoded-remote-location-sig)
-	   (pk 'setup 'v -1)
            (define remote-handoff-pubkey
 	     (sexp->canonical-sexp remote-encoded-pubkey))
            ;; TODO: I guess we didn't know by the time this was opened
