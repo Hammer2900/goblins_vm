@@ -1585,7 +1585,6 @@
          (let lp ()
            (match (read-message unmarshallers)
              [(? eof-object?)
-	      (pk 'eof)
               ;; (displayln "Shutting down captp session...")
               (<-np-extern incoming-forwarder
                            (internal-shutdown 'disconnected))]
