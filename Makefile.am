@@ -45,7 +45,7 @@ SUFFIXES = .scm .go
 SOURCES = goblins.scm \
 	  goblins/ocapn/netlayer/fake.scm \
           goblins/ocapn/crypto-stubs.scm \
-	  goblins/ocapn/marshalling.scm \
+          goblins/ocapn/marshalling.scm \
           goblins/ocapn/structs-urls.scm \
           goblins/ocapn/captp.scm \
           goblins/utils/simple-sealers.scm \
@@ -62,6 +62,7 @@ SOURCES = goblins.scm \
           goblins/actor-lib/common.scm \
           goblins/actor-lib/ward.scm \
           goblins/actor-lib/swappable.scm \
+          goblins/actor-lib/joiners.scm \
           goblins/ghash.scm \
           goblins/vat.scm \
           goblins/default-vat-scheduler.scm \
@@ -80,6 +81,7 @@ TESTS = tests/utils/test-bytes-stuff.scm \
         tests/actor-lib/test-cell.scm \
         tests/contrib/test-syrup.scm \
 	tests/ocapn/marshalling.scm \
+        tests/actor-lib/test-joiners.scm \
         tests/test-vat.scm \
         tests/test-inbox.scm \
         tests/test-ghash.scm \
