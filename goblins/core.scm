@@ -1047,6 +1047,9 @@
         [(near-mactor) near-mactor]
         [else (error 'invalid-syscaller-method
                      method-id)]))
+    (when closed?
+      (error "Syscaller closed business while processing:"
+             method-id args))
     (apply method args))
 
   ;; TODO
@@ -1083,9 +1086,6 @@
 
     (define mactor
       (actormap-ref-or-die to-refr))
-
-    (when closed?
-      (error "Sorry, this syscaller is closed for business!"))
 
     (match mactor
       [(? mactor:object?)
