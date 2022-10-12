@@ -44,6 +44,9 @@ SUFFIXES = .scm .go
 
 SOURCES = goblins.scm \
 	  goblins/ocapn/netlayer/fake.scm \
+	  goblins/ocapn/netlayer/onion.scm \
+	  goblins/ocapn/netlayer/onion-socks.scm \
+	  goblins/ocapn/netlayer/utils.scm \
           goblins/ocapn/crypto-stubs.scm \
           goblins/ocapn/marshalling.scm \
           goblins/ocapn/structs-urls.scm \
