@@ -121,7 +121,8 @@
 ;; that is attached to the vat-control-ch and vat-connector of this vat.
 (define* (spawn-vat-fiber name #:key (control-ch (make-channel))
                           (scheduler (default-vat-scheduler))
-                          (dynamic-wrap port-redirect-dynamic-wrap))
+                          (dynamic-wrap port-redirect-dynamic-wrap)
+                          (additional-ops #f))
   "Spawns a fiber for this vat and returns a channel by which
 you can speak to the vat.
 
@@ -204,6 +205,13 @@ Keywords:
         [#('ok rval)
          (transactormap-merge! new-actormap)]
         [_ #f]))
+
+    (define vat-loop-ops
+      (append (or additional-ops '())
+              (list (wrap-operation (get-operation control-ch)
+                                    handle-vat-control)
+                    (wrap-operation (get-operation deq-ch)
+                                    handle-incoming-message))))
     ;; And now loop doing this...
     (while (atomic-box-ref running?)     ; ... unless it's time to stop
       (call/ec
@@ -212,16 +220,14 @@ Keywords:
          (define (handle-exn exn)
            (define stack
              (make-stack #t handle-exn))
+           (pk 'exn exn 'stack stack)
            (display-backtrace stack (current-error-port))
            (newline (current-error-port))
            (abort))
          ;; Actually run operation
          (define (handle-op)
            (perform-operation
-            (choice-operation (wrap-operation (get-operation control-ch)
-                                              handle-vat-control)
-                              (wrap-operation (get-operation deq-ch)
-                                              handle-incoming-message))))
+            (apply choice-operation vat-loop-ops)))
          (with-exception-handler handle-exn
            handle-op)))))
   ;; Wrap vat spawning in "ambient advice", allowing an opportunity
@@ -288,7 +294,7 @@ over some of the communication aspects of controlling the vat."
 
 (define* (spawn-vat #:key (name #f))
   (let* ((name (or name (generate-random-vat-name)))
-	     (result-ch (make-channel))
+         (result-ch (make-channel))
          (vat-halt? (make-condition))
          (vat-thread
           (call-with-new-thread
