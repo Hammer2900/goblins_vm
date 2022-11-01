@@ -58,12 +58,18 @@
   (define b-loc (b-run ($ b-nl 'our-location)))
   (a-run (on ($ a-mycapn 'connect-to-machine b-loc)
              (lambda (loc)
-               (pk 'horray-connected-to loc)))))
-
-;; And if you're bold enough to try sturdyrefs, try this too
-(begin
+               (pk 'horray-connected-to loc))))
+  (sleep 5)  ; sleep makes it so that the connection has probably succeeded already
+  ;; And if you're bold enough to try sturdyrefs, try this too
   (define alice-sref (a-run ($ a-mycapn 'register alice 'testuds)))
-  (b-run (on (<- ($ b-mycapn 'enliven alice-sref) "Bob")
+  ;; succeeds
+  (b-run (on ($ b-mycapn 'enliven alice-sref)
+             (lambda (b-alice)
+               (on (<- (pk 'b-alice b-alice) "Bob")
+                   (lambda (greets)
+                     (pk 'heard-back greets))))))
+  ;; fails
+  (b-run (on (<- ($ b-mycapn 'enliven alice-sref))
              (lambda (greets)
                (pk 'heard-back greets)))))
 
