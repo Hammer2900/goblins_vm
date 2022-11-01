@@ -31,6 +31,7 @@
   #:use-module (goblins utils weak-box)
   #:use-module (goblins utils bytes-stuff)
   #:use-module (goblins utils crypto-stuff)
+  #:use-module (goblins utils random-name)
   #:use-module (goblins contrib syrup)
   #:use-module (ice-9 match)
   #:use-module (ice-9 vlist)
@@ -386,9 +387,13 @@
   ;; Used by mactor:question (a special kind of promise),
   ;; since messages sent to a question are pipelined through the answer
   ;; side of some "remote" machine.
+  ;; TODO: Remove question finder IDs.  That's for debugging.
   (define-record-type <question-finder>
-    (make-question-finder)
-    question-finder?)
+    (_make-question-finder debug-id)
+    question-finder?
+    (debug-id question-finder-debug-id))
+  (define (make-question-finder)
+    (_make-question-finder (random-name 12)))
 
   (define (_handle-message msg)
     (match msg
