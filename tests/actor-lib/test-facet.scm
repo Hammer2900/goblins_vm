@@ -13,14 +13,15 @@
 ;;; limitations under the License.
 
 (define-module (tests actor-lib test-facet)
-  #:use-module (goblins core)
+  #:use-module (goblins)
+  #:use-module (goblins vat)
   #:use-module (goblins actor-lib facet)
   #:use-module (ice-9 match)
   #:use-module (srfi srfi-64))
 
 (test-begin "test-facet")
 
-(define am (make-whactormap))
+(define test-vat (spawn-vat))
 
 (define (^wizard bcom)
   (match-lambda*
@@ -33,21 +34,32 @@
     [('world-ender level)
      (format #f "Casts world ender level ~a!"
              level)]))
+
 (define all-powerful-wizard
-  (actormap-spawn! am ^wizard))
+  (test-vat (lambda () (spawn ^wizard))))
+
 (define faceted-wizard
-  (actormap-spawn! am ^facet all-powerful-wizard
-                   'magic-missile
-                   'flame-tongue))
+  (test-vat
+   (lambda ()
+     (spawn ^facet
+	    all-powerful-wizard
+	    'magic-missile
+	    'flame-tongue
+	    #:sync? #t))))
+
 (test-equal
- (actormap-peek am faceted-wizard 'magic-missile 2)
- "Casts magic missile level 2!")
+    "We can fire a magic missile with the faceted wizard"
+  (test-vat (lambda () ($ faceted-wizard 'magic-missile 2)))
+  "Casts magic missile level 2!")
 (test-equal
- (actormap-peek am faceted-wizard 'flame-tongue 3)
- "Casts flame tongue level 3!")
+    "We can fire a flame tongue with the faceted wizard"
+    (test-vat (lambda () ($ faceted-wizard 'flame-tongue 3)))
+    "Casts flame tongue level 3!")
+
 (test-error
+ "The facet prevents using a method it's not forwarding"
  #t
- (actormap-peek am faceted-wizard 'world-ender 99))
+ (test-vat (lambda () ($ faceted-wizard 'world-ender 99))))
 
 (test-end "test-facet")
 
