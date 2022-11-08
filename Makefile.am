@@ -47,6 +47,8 @@ SOURCES = goblins.scm \
 	  goblins/ocapn/netlayer/onion.scm \
 	  goblins/ocapn/netlayer/onion-socks.scm \
 	  goblins/ocapn/netlayer/utils.scm \
+	  goblins/ocapn/netlayer/base-port.scm \
+	  goblins/ocapn/netlayer/testuds.scm \
           goblins/ocapn/crypto-stubs.scm \
           goblins/ocapn/marshalling.scm \
           goblins/ocapn/structs-urls.scm \
