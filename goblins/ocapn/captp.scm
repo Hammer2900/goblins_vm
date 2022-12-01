@@ -904,7 +904,7 @@
         (match cmd
           [($ <cmd-send-message> msg)
            (define-values (real-msg answer-pos)
-             (match msg
+             (match (pk 'msg msg)
                [(? message?)
                 (values msg #f)]
                [($ <questioned> msg answer-this-question)

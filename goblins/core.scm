@@ -949,8 +949,16 @@
   (listener listen-request-listener)
   (wants-partial? listen-request-wants-partial?))
 
+(define-record-type <forward-to-captp>
+  (make-forward-to-captp msg connector)
+  forward-to-captp?
+  (msg forward-to-captp-msg)
+  (connector forward-to-captp-connector))
+
 (define message-or-request-to
   (match-lambda
+    [(? forward-to-captp? forward-me)
+     (message-or-request-to (forward-to-captp-msg forward-me))]
     [(? message? msg) (message-to msg)]
     [(? listen-request? lr) (listen-request-to lr)]
     [(? questioned? qstn) (message-to (questioned-message qstn))]))
@@ -1023,6 +1031,9 @@
   (define vat-connector
     (actormap-vat-connector actormap))
   (define new-msgs '())
+
+  (define (queue-new-msg! new-msg)
+    (set! new-msgs (cons new-msg new-msgs)))
 
   (define closed? #f)
 
@@ -1224,6 +1235,7 @@
          (let send-rest ([waiting-messages orig-waiting-messages])
            (match waiting-messages
              ['() _void]
+             ;; TODO: add support for <questioned> here, right?!?!
              [((? message? msg) rest-waiting ...)
               (let ((resolve-me (message-resolve-me msg))
                     (args (message-args msg)))
@@ -1513,19 +1525,19 @@
                                                     followup-question-finder
                                                     #:captp-connector
                                                     captp-connector)])
-                (captp-connector
-                 'handle-message
-                 (make-questioned (make-message to-question-finder
-                                                followup-question-resolver
-                                                args)
-                                  followup-question-finder))
+                (queue-new-msg! (make-forward-to-captp
+                                 (make-questioned (make-message to-question-finder
+                                                                followup-question-resolver
+                                                                args)
+                                                  followup-question-finder)
+                                 captp-connector))
                 followup-question-promise)]
              ;; Otherwise, we can just send it without any question and return
              ;; void
              [else
-              (captp-connector
-               'handle-message
-               (make-message to-question-finder #f args))
+              (queue-new-msg! (make-forward-to-captp
+                               (make-message to-question-finder #f args)
+                               captp-connector))
               _void])))])))
 
   ;; helper to the below two methods
@@ -1539,7 +1551,7 @@
             (if answer-this-question
                 (make-questioned base-message answer-this-question)
                 base-message)))
-      (set! new-msgs (cons new-message new-msgs))))
+      (queue-new-msg! new-message)))
 
   (define (_<-np to-refr args)
     (_send-message to-refr #f args)
@@ -2162,7 +2174,7 @@
   (churn!)
   ;; And now let's return everything...
   (let ((send-far-msgs (reverse (car send-far-q))))
-    (values first-return-val new-am send-far-msgs)))
+    (values first-return-val new-am (pk 'send-far-msgs send-far-msgs))))
 
 (define* (actormap-churn-run actormap thunk
                              #:key [catch-errors? #t])
@@ -2203,21 +2215,29 @@
      (raise-exception err)]))
 
 (define (dispatch-message msg)
-  (define to-refr (message-or-request-to msg))
   (cond
-   ;; send locally
-   [(local-refr? to-refr)
-    (match (local-refr-vat-connector to-refr)
-      ;; TODO: When messages aren't going to be possible to deliver,
-      ;; we should alert the waiting-on-message
-      [(? procedure? vat-connector)
-       (vat-connector 'handle-message msg)]
-      ;; noplace like nowhere
-      [#f 'no-op])]
-   ;; send remotely
+   [(forward-to-captp? msg)
+    ;; oh this is one of those klugey "forward me" things
+    (let ((real-msg (forward-to-captp-msg msg))
+          (captp-connector (forward-to-captp-connector msg)))
+      (captp-connector 'handle-message real-msg))]
    [else
-    (let ((captp-connector (remote-refr-captp-connector to-refr)))
-      (captp-connector 'handle-message msg))]))
+    ;; okay guess not
+    (let ((to-refr (message-or-request-to msg)))
+      (cond
+       ;; send locally
+       [(local-refr? to-refr)
+        (match (local-refr-vat-connector to-refr)
+          ;; TODO: When messages aren't going to be possible to deliver,
+          ;; we should alert the waiting-on-message
+          [(? procedure? vat-connector)
+           (vat-connector 'handle-message msg)]
+          ;; noplace like nowhere
+          [#f 'no-op])]
+       ;; send remotely
+       [else
+        (let ((captp-connector (remote-refr-captp-connector to-refr)))
+          (captp-connector 'handle-message msg))]))]))
 
 (define (dispatch-messages msgs)
   (for-each dispatch-message msgs))
