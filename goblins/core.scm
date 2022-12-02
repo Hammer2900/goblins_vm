@@ -949,6 +949,14 @@
   (listener listen-request-listener)
   (wants-partial? listen-request-wants-partial?))
 
+;; This kluge is for when we need to forward a message to captp... but
+;; typically also it might have a question-finder for the `to' field...
+;; so we put in this hack to let the code handling the turn/churn know
+;; how to dispatch these since the message might not be addressed to
+;; a normal refr.  This is kind of weird though, because you don't need
+;; this if we have a remote-refr that already has a captp-connector.
+;; It could be that instead we should make another kind of remote-refr
+;; specifically for questions which have not been assigned slots... yet.
 (define-record-type <forward-to-captp>
   (make-forward-to-captp msg connector)
   forward-to-captp?
@@ -2216,6 +2224,8 @@
 
 (define (dispatch-message msg)
   (cond
+   ;; See the comment above <forward-to-captp> for why we're kind of
+   ;; duplicating code with the final nested branch of this procedure.
    [(forward-to-captp? msg)
     ;; oh this is one of those klugey "forward me" things
     (let ((real-msg (forward-to-captp-msg msg))
