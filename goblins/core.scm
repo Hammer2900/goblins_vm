@@ -64,6 +64,8 @@
             $ <-np <-
             on
 
+            fspawn
+
             <-np-extern
             listen-to
 
@@ -1834,6 +1836,10 @@
        (maybe-actorize broken-handler 'broken-handler)
        (maybe-actorize finally-handler 'finally-handler)
        promise?))
+
+;; And now sugar... "fast spawn"
+(define-syntax-rule (fspawn constructor args ...)
+  (spawn-named 'constructor constructor args ...))
 
 
 
