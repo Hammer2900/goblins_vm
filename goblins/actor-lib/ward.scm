@@ -92,7 +92,7 @@
     (lambda (target . args)
       ($/<- target (seal args))))
 
-  (values (spawn ^warden) (spawn ^incanter)))
+  (values (fspawn ^warden) (fspawn ^incanter)))
 
 ;; Sets up a magical barrier using the powers of `warden` to restrict
 ;; access to `behavior`.
@@ -168,4 +168,4 @@
 
 (define* (enchant incanter target
                   #:key [async? #f])
-  (spawn ^incantified incanter target #:async? async?))
+  (fspawn ^incantified incanter target #:async? async?))

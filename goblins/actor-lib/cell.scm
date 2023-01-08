@@ -38,12 +38,12 @@
 (define (cell->read-only cell)
   (define (^ro-cell bcom)
     (lambda () ($ cell)))
-  (spawn ^ro-cell))
+  (fspawn ^ro-cell))
 
 (define (cell->write-only cell)
   (define (^wo-cell bcom)
     (lambda (new-val) ($ cell new-val)))
-  (spawn ^wo-cell))
+  (fspawn ^wo-cell))
 
 (define-syntax define-cell
   (syntax-rules ()

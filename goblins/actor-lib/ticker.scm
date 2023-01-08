@@ -27,7 +27,7 @@
 
   (define (to-tick give-ticky)
     (define ticky
-      (spawn ^ticky #f))
+      (fspawn ^ticky #f))
     (define new-refr
       (give-ticky ticky))
     ($ new-ticked
@@ -108,4 +108,4 @@
       (bcom (^ticker bcom next-tickers)
             fold-result)]))  ; return fold result
 
-  (spawn ^ticker '()))
+  (fspawn ^ticker '()))

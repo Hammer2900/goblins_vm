@@ -49,11 +49,11 @@
 
 (define (spawn-nonce-registry-locator-pair)
   (define registry
-    (spawn ^nonce-registry))
+    (fspawn ^nonce-registry))
   (define (^nonce-locator bcom)
     (methods
      [(fetch swiss-num)
       ($ registry 'fetch swiss-num)]))
   (define locator
-    (spawn ^nonce-locator))
+    (fspawn ^nonce-locator))
   (values registry locator))
