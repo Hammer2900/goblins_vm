@@ -379,13 +379,14 @@
  "Using `on' against a resolved refr returns that refr"
  on-resolved-bob-arg bob)
 
-(snarf near-settled-promise-value)
+(snarf near-settled-promise-values)
 
 (test-eq
- "near-settled-promise-value can extract local-refr value"
- (actormap-run
-  am (lambda ()
-       (near-settled-promise-value bob-vow)))
+ "near-settled-promise-values can extract local-refr value"
+ (car
+  (actormap-run
+   am (lambda ()
+        (near-settled-promise-values bob-vow))))
  bob)
 
 (define encase-vow-and-resolver
@@ -448,6 +449,11 @@
  "Fulfilling a promise with on"
  (try-out-on am 'fulfill 'how-fulfilling)
  '((how-fulfilling) #f #t))
+
+(test-equal
+ "Fulfilling a promise with on with multiple values"
+ (try-out-on am 'fulfill 'how 'fulfilling 'this 'is)
+ '((how fulfilling this is) #f #t))
 
 (test-equal
  "Breaking a promise with on"
@@ -523,6 +529,43 @@
    "basic promise contagion"
    (car what-i-got)
    'oh-no))
+
+(let ([what-i-got #f])
+  (actormap-churn-run!
+   am (lambda ()
+        (define foo (spawn-const 'i-am-foo))
+        (on (<- (<- (spawn-proc (lambda _ foo))))
+            (lambda (v)
+              (set! what-i-got `(yeah ,v)))
+            #:catch
+            (lambda (e)
+              (set! what-i-got `(oh-no ,e))))))
+  (test-equal
+   "basic promise pipelining"
+   what-i-got
+   '(yeah i-am-foo)))
+
+(define (^returns-multi _bcom)
+  (lambda ()
+    (values 'a 'b 'c)))
+
+(define (^returns-multi-factory _bcom)
+  (lambda ()
+    (spawn ^returns-multi)))
+
+(let ((what-i-got #f))
+  (actormap-churn-run!
+   am (lambda ()
+        (define rmf (spawn ^returns-multi-factory))
+        (on (<- (<- rmf))
+            (lambda args
+              (set! what-i-got `(yeah ,args)))
+            #:catch
+            (lambda (e)
+              (set! what-i-got `(oh-no ,e))))))
+  (test-equal "basic promise pipelining with multi-val return"
+    what-i-got
+    '(yeah (a b c))))
 
 (test-equal
  "Passing #:promise? to `on` returns a promise that is resolved"

@@ -121,9 +121,9 @@
 
             near-promise-broken?
             near-promise-settled?
-            near-settled-promise-value
+            near-settled-promise-values
             near-promise-resolved?
-            near-resolved-promise-value)
+            near-resolved-promise-values)
   #:replace (spawn)
   #:use-module (srfi srfi-9)
   #:use-module (srfi srfi-9 gnu)
@@ -142,6 +142,10 @@
 
 ;; Old hack to get the "unspecified/undefined type"
 (define _void (if #f #f))
+;; Some of these procedures expect the returned values as a list
+;; Well we don't need to keep making a list dynamically for the
+;; void cases...
+(define _void-list (list _void))
 
 ;; mimic Racket's seteq
 (define (vseteq . items)
@@ -728,15 +732,23 @@ Type: Any -> Boolean"
 
 (define (make-become-sealer-triplet)
   (define-record-type <become-seal>
-    (make-become-seal new-behavior return-val)
+    (make-become-seal new-behavior return-vals)
     become-sealed?
     (new-behavior unseal-behavior)
-    (return-val unseal-return-val))
-  (define* (become new-behavior #:optional [return-val _void])
-    (make-become-seal new-behavior return-val))
+    (return-vals unseal-return-vals))
+  (define become
+    (case-lambda
+      ;; This means there's no way to become something and return
+      ;; zero values to your continuation.  This maybe isn't a
+      ;; problem, because how often do you *want* zero values returned
+      ;; to your continuation?  But it is... strange.
+      ((new-behavior)
+       (make-become-seal new-behavior _void-list))
+      ((new-behavior . return-vals)
+       (make-become-seal new-behavior return-vals))))
   (define (unseal sealed)
     (values (unseal-behavior sealed)
-            (unseal-return-val sealed)))
+            (unseal-return-vals sealed)))
   (values become unseal become-sealed?))
 
 
@@ -902,6 +914,12 @@ Type: Any -> Boolean"
   mactor:encased?
   (val mactor:encased-val))
 
+;; The same as above, but with multiple value return
+(define-record-type <mactor:encased-multi>
+  (make-mactor:encased-multi vals)
+  mactor:encased-multi?
+  (vals mactor:encased-multi-vals))
+
 ;; Breakage (and remember why!)
 (define-record-type <mactor:broken>
   (make-mactor:broken problem)
@@ -1002,39 +1020,45 @@ Type: Any -> Boolean"
 
 (define* (near-promise-settled? promise-refr #:key [broken-ok? #t])
   (match (near-mactor promise-refr)
-    [(or (? mactor:local-link?) (? mactor:encased?))
+    [(or (? mactor:local-link?)
+         (? mactor:encased?) (? mactor:encased-multi?))
      #t]
     [(? mactor:broken?)
      broken-ok?]
     [_ #f]))
 
-(define (near-settled-promise-value promise-refr)
+(define (near-settled-promise-values promise-refr)
   (define mactor (near-mactor promise-refr))
   (match mactor
     [(? mactor:local-link?)
-     (mactor:local-link-point-to mactor)]
+     (list (mactor:local-link-point-to mactor))]
     [(? mactor:encased?)
-     (mactor:encased-val mactor)]
+     (list (mactor:encased-val mactor))]
+    [(? mactor:encased-multi?)
+     (mactor:encased-multi-vals mactor)]
     [(? mactor:broken?)
      (raise-exception (mactor:broken-problem mactor))]))
 
 (define* (near-promise-resolved? promise-refr #:key [broken-ok? #t])
   (match (near-mactor promise-refr)
-    [(or (? mactor:local-link?) (? mactor:encased?))
+    [(or (? mactor:local-link?)
+         (? mactor:encased?) (? mactor:encased-multi?))
      #t]
     [(? mactor:broken?)
      broken-ok?]
     [_ #f]))
 
-(define (near-resolved-promise-value promise-refr)
+(define (near-resolved-promise-values promise-refr)
   (define mactor (near-mactor promise-refr))
   (match mactor
     [(? mactor:local-link?)
-     (mactor:local-link-point-to mactor)]
+     (list (mactor:local-link-point-to mactor))]
     [(? mactor:remote-link?)
-     (mactor:remote-link-point-to mactor)]
+     (list (mactor:remote-link-point-to mactor))]
     [(? mactor:encased?)
-     (mactor:encased-val mactor)]
+     (list (mactor:encased-val mactor))]
+    [(? mactor:encased-multi?)
+     (mactor:encased-multi-vals mactor)]
     [(? mactor:broken?)
      (raise-exception (mactor:broken-problem mactor))]))
 
@@ -1168,6 +1192,22 @@ Type: Any -> Boolean"
 
 
 
+;; Syscaller support
+;; =================
+
+;; This happens when we set up promise pipelining with something that
+;; eventually ended up resolving to multiple values... there's nowhere
+;; sensible for those messages to go.  So we create this thing as a
+;; recipient, which is rejected, but at least rejected in a way that
+;; the rest of the machine prints out in a useful way.
+;; Heck of a kluge, though.
+(define-record-type <mvr-forwarding-failure>
+  (make-mvr-forwarding-failure tried-to-forward-to)
+  mvr-forwarding-failure?
+  (tried-to-forward-to mvr-forwarding-failure-tried-to-forward-to))
+
+
+
 ;; Syscaller
 ;; =========
 
@@ -1297,34 +1337,35 @@ Type: Any -> Boolean"
          ;; I guess watching for this guarantees that an immediate call
          ;; against a local actor will not be tail recursive.
          ;; TODO: We need to document that.
-         (define-values (new-behavior return-val)
-           (let ([returned
-                  (call-with-prompt *actor-await-prompt*
-                    _do-actor-call _handle-await)])
-             (if (become? returned)
-                 ;; The unsealer unseals both the behavior and return-value anyway
-                 (become-unsealer returned)
-                 ;; In this case, we're not becoming anything, so just give us
-                 ;; the return-val
-                 (values #f returned))))
-
-         ;; if a new behavior for this actor was specified,
-         ;; let's replace it
-         (when new-behavior
-           (unless (procedure? new-behavior)
-             (error 'become-failure "Tried to become a non-procedure behavior:"
-                    new-behavior))
-           (actormap-set! actormap to-refr
-                          (make-mactor:object
-                           new-behavior
-                           (mactor:object-become-unsealer mactor)
-                           (mactor:object-become? mactor))))
-
-         return-val)]
+         (call-with-values (lambda ()
+                             (call-with-prompt *actor-await-prompt*
+                               _do-actor-call _handle-await))
+           (match-lambda*
+             ;; New behavior was specified, so let's replace this current behavior
+             (((? become? returned))
+              ;; The unsealer unseals both the behavior and return-vals anyway
+              (define-values (new-behavior return-vals)
+                (become-unsealer returned))
+              (unless (procedure? new-behavior)
+                (error 'become-failure "Tried to become a non-procedure behavior:"
+                       new-behavior))
+              (actormap-set! actormap to-refr
+                             (make-mactor:object
+                              new-behavior
+                              (mactor:object-become-unsealer mactor)
+                              (mactor:object-become? mactor)))
+              return-vals)
+             (return-vals
+              ;; In this case, we're not becoming anything, so just give us
+              ;; the return-vals
+              return-vals))))]
       ;; If it's an encased value, "calling" it just returns the
       ;; internal value.
       [(? mactor:encased?)
-       (mactor:encased-val mactor)]
+       (list (mactor:encased-val mactor))]
+      ;; If encased-multi, we've already got the values as a list.
+      [(? mactor:encased-multi?)
+       (mactor:encased-multi-vals mactor)]
       ;; Ah... we're linking to another actor locally, so let's
       ;; just de-symlink and call that instead.
       [(? mactor:local-link?)
@@ -1359,7 +1400,7 @@ Type: Any -> Boolean"
   (define (spawn-mactor mactor debug-name)
     (actormap-spawn-mactor! actormap mactor debug-name))
 
-  (define (fulfill-promise promise-id sealed-val)
+  (define (fulfill-promise promise-id sealed-vals)
     (call/ec
      (lambda (return-early)
        (define orig-mactor
@@ -1367,8 +1408,8 @@ Type: Any -> Boolean"
        (unless (mactor:unresolved? orig-mactor)
          (error 'resolving-resolved
                 "Attempt to resolve resolved actor:" promise-id))
-       (define resolve-to-val
-         (unseal-mactor-resolution orig-mactor sealed-val))
+       (define resolve-to-vals
+         (unseal-mactor-resolution orig-mactor sealed-vals))
 
        (define orig-waiting-messages
          (match orig-mactor
@@ -1378,7 +1419,7 @@ Type: Any -> Boolean"
             (mactor:closer-waiting-messages orig-mactor)]
            [_ '()]))
 
-       (define (forward-messages)
+       (define (forward-messages forward-to)
          (let send-rest ([waiting-messages orig-waiting-messages])
            (match waiting-messages
              ['() _void]
@@ -1389,107 +1430,123 @@ Type: Any -> Boolean"
                 ;; preserve FIFO by recursing first
                 (send-rest rest-waiting)
                 ;; and then send this message along
-                (_send-message resolve-to-val resolve-me args))])))
+                (_send-message forward-to resolve-me args))])))
 
        (define new-waiting-messages
-         (if (remote-promise-refr? resolve-to-val)
-             ;; don't forward waiting messages to remote promises
-             orig-waiting-messages
-             ;; but do forward to literally anything else... empty
-             ;; the queue!
-             (begin (forward-messages)
-                    '())))
+         (match resolve-to-vals
+           ;; don't forward waiting messages to remote promises
+           (((? remote-promise-refr?))
+            orig-waiting-messages)
+           ;; but do forward to anything other single value... empty
+           ;; the queue!
+           ((forward-to)
+            (begin (forward-messages forward-to)
+                   '()))
+           ;; In the case that this resolved to multiple values, we've got
+           ;; a funky problem because we can't actually meaningfully send
+           ;; to any of these.  This kluge sends to a special object
+           ;; which declares itself a forwarding failure, for
+           ;; debugging purposes.
+           (multi-vals
+            (forward-messages (make-mvr-forwarding-failure multi-vals))
+            '())))
 
        (define orig-listeners
          (mactor:unresolved-listeners orig-mactor))
 
        (define next-mactor-state
-         (match resolve-to-val
-           [(? local-object-refr?)
-            (when (eq? resolve-to-val promise-id)
-              (return-early
-               ;; We want to break this because it should be explicitly clear
-               ;; to everyone that the promise was broken.
-               (break-promise promise-id
-                              ;; TODO: we need some sort of error type we do
-                              ;;   allow to explicitly be shared, this one is a
-                              ;;   reasonable candidate
-                              'cycle-in-promise-resolution)))
-            (make-mactor:local-link resolve-to-val)]
-           [(? remote-object-refr?)
-            ;; Since the captp connection is the one that might break this,
-            ;; we need to ask it what it uses as its resolver unsealer/tm
-            ;; @@: ... This doesn't seem like a good solution.
-            ;;   Maybe bears re-examination with the addition of on-sever.
-            (let* ([connector (remote-refr-captp-connector resolve-to-val)]
-                   [partition-unsealer-tm-cons (connector 'partition-unsealer-tm-cons)])
-              ;; TODO: Do we need to notify it that we want to know about
-              ;;   breakage?  Presumably... so do it here instead...?
-              ;; TODO: Do we really need to pattern match against a cons here?
-              ;;   Couldn't we return multiple values?
-              (match partition-unsealer-tm-cons
-                [(new-resolver-unsealer . new-resolver-tm?)
-                 (make-mactor:remote-link (make-m~eventual new-resolver-unsealer
-                                                           new-resolver-tm?)
-                                          resolve-to-val)]))]
-           [(or (? local-promise-refr?)
-                (? remote-promise-refr?))
-            (define new-history
-              (if (mactor:closer? orig-mactor)
-                  (vseteq-add (mactor:closer-history orig-mactor)
-                              (mactor:closer-point-to orig-mactor))
-                  (vseteq promise-id)))
-            ;; Detect cycles!
-            (when (vseteq-member? new-history resolve-to-val)
-              ;; not sure we actually need to return anything, but I guess
-              ;; this is mildly future-proof.
-              (return-early
-               ;; We want to break this because it should be explicitly clear
-               ;; to everyone that the promise was broken.
-               (break-promise promise-id
-                              ;; TODO: we need some sort of error type we do
-                              ;;   allow to explicitly be shared, this one is a
-                              ;;   reasonable candidate
-                              'cycle-in-promise-resolution)))
+         (match resolve-to-vals
+           ;; The most common case is a single value
+           ((resolve-to-val)
+            (match resolve-to-val
+              [(? local-object-refr?)
+               (when (eq? resolve-to-val promise-id)
+                 (return-early
+                  ;; We want to break this because it should be explicitly clear
+                  ;; to everyone that the promise was broken.
+                  (break-promise promise-id
+                                 ;; TODO: we need some sort of error type we do
+                                 ;;   allow to explicitly be shared, this one is a
+                                 ;;   reasonable candidate
+                                 'cycle-in-promise-resolution)))
+               (make-mactor:local-link resolve-to-val)]
+              [(? remote-object-refr?)
+               ;; Since the captp connection is the one that might break this,
+               ;; we need to ask it what it uses as its resolver unsealer/tm
+               ;; @@: ... This doesn't seem like a good solution.
+               ;;   Maybe bears re-examination with the addition of on-sever.
+               (let* ([connector (remote-refr-captp-connector resolve-to-val)]
+                      [partition-unsealer-tm-cons (connector 'partition-unsealer-tm-cons)])
+                 ;; TODO: Do we need to notify it that we want to know about
+                 ;;   breakage?  Presumably... so do it here instead...?
+                 ;; TODO: Do we really need to pattern match against a cons here?
+                 ;;   Couldn't we return multiple values?
+                 (match partition-unsealer-tm-cons
+                   [(new-resolver-unsealer . new-resolver-tm?)
+                    (make-mactor:remote-link (make-m~eventual new-resolver-unsealer
+                                                              new-resolver-tm?)
+                                             resolve-to-val)]))]
+              [(or (? local-promise-refr?)
+                   (? remote-promise-refr?))
+               (define new-history
+                 (if (mactor:closer? orig-mactor)
+                     (vseteq-add (mactor:closer-history orig-mactor)
+                                 (mactor:closer-point-to orig-mactor))
+                     (vseteq promise-id)))
+               ;; Detect cycles!
+               (when (vseteq-member? new-history resolve-to-val)
+                 ;; not sure we actually need to return anything, but I guess
+                 ;; this is mildly future-proof.
+                 (return-early
+                  ;; We want to break this because it should be explicitly clear
+                  ;; to everyone that the promise was broken.
+                  (break-promise promise-id
+                                 ;; TODO: we need some sort of error type we do
+                                 ;;   allow to explicitly be shared, this one is a
+                                 ;;   reasonable candidate
+                                 'cycle-in-promise-resolution)))
 
-            ;; Make a new set of resolver sealers for this.
-            ;; However, we don't use the general ^resolver because we're
-            ;; explicitly using the fulfilled-handler/broken-handler things
-            (let*-values ([(new-resolver-sealer new-resolver-unsealer new-resolver-tm?)
-                           (make-sealer-triplet 'fulfill-promise)]
-                          [(new-resolver)
-                           (_spawn ^resolver (list promise-id new-resolver-sealer)
-                                   '^resolver)])
-              ;; Now subscribe to the promise...
-              (_send-listen resolve-to-val new-resolver #t)
-              (let* ([new-listeners
-                      ;; inform those who want partial resolution and gather those who don't
-                      (let lp ([listeners orig-listeners]
-                               [new-listeners '()])
-                        (match listeners
-                          ['() new-listeners]
-                          [(listener-info rest-listeners ...)
-                           (if (listener-info-wants-partial? listener-info)
-                               ;; resolve and drop out of listeners
-                               (begin
-                                 ;; resolve
-                                 (_<-np (listener-info-resolve-me listener-info)
-                                        (list 'fulfill resolve-to-val))
-                                 ;; recurse and drop out
-                                 (lp rest-listeners new-listeners))
-                               ;; recurse with this one present
-                               (lp rest-listeners
-                                   (cons listener-info new-listeners)))]))]
-                     [new-eventual (make-m~eventual new-resolver-unsealer
-                                                    new-resolver-tm?)]
-                     [new-unresolved (make-m~unresolved new-eventual
-                                                        new-listeners)])
-                ;; Now we become "closer" to this promise
-                (make-mactor:closer new-unresolved
-                                    resolve-to-val new-history
-                                    new-waiting-messages)))]
-           ;; anything else is an encased value
-           [_ (make-mactor:encased resolve-to-val)]))
+               ;; Make a new set of resolver sealers for this.
+               ;; However, we don't use the general ^resolver because we're
+               ;; explicitly using the fulfilled-handler/broken-handler things
+               (let*-values ([(new-resolver-sealer new-resolver-unsealer new-resolver-tm?)
+                              (make-sealer-triplet 'fulfill-promise)]
+                             [(new-resolver)
+                              (_spawn ^resolver (list promise-id new-resolver-sealer)
+                                      '^resolver)])
+                 ;; Now subscribe to the promise...
+                 (_send-listen resolve-to-val new-resolver #t)
+                 (let* ([new-listeners
+                         ;; inform those who want partial resolution and gather those who don't
+                         (let lp ([listeners orig-listeners]
+                                  [new-listeners '()])
+                           (match listeners
+                             ['() new-listeners]
+                             [(listener-info rest-listeners ...)
+                              (if (listener-info-wants-partial? listener-info)
+                                  ;; resolve and drop out of listeners
+                                  (begin
+                                    ;; resolve
+                                    (_<-np (listener-info-resolve-me listener-info)
+                                           (list 'fulfill resolve-to-val))
+                                    ;; recurse and drop out
+                                    (lp rest-listeners new-listeners))
+                                  ;; recurse with this one present
+                                  (lp rest-listeners
+                                      (cons listener-info new-listeners)))]))]
+                        [new-eventual (make-m~eventual new-resolver-unsealer
+                                                       new-resolver-tm?)]
+                        [new-unresolved (make-m~unresolved new-eventual
+                                                           new-listeners)])
+                   ;; Now we become "closer" to this promise
+                   (make-mactor:closer new-unresolved
+                                       resolve-to-val new-history
+                                       new-waiting-messages)))]
+              ;; anything else is an encased value
+              [_ (make-mactor:encased resolve-to-val)]))
+           ;; Well this must be a multiple value return, encase to the special
+           ;; encase-multi mactor type
+           (_ (make-mactor:encased-multi resolve-to-vals))))
 
        ;;  - Now actually switch to the new mactor state
        (actormap-set! actormap promise-id
@@ -1499,7 +1556,7 @@ Type: Any -> Boolean"
        (unless (mactor:unresolved? next-mactor-state)
          (for-each (lambda (listener-info)
                      (_<-np (listener-info-resolve-me listener-info)
-                            (list 'fulfill resolve-to-val)))
+                            (cons 'fulfill resolve-to-vals)))
                    orig-listeners)))))
 
   ;; TODO: Add support for broken-because-of-network-partition support
@@ -1571,7 +1628,7 @@ Type: Any -> Boolean"
                (define call-result
                  (proc))
                (when resolve-me
-                 (_<-np resolve-me (list 'fulfill call-result)))
+                 (_<-np resolve-me (cons 'fulfill call-result)))
                call-result)
              #;(with-exception-handler handle-exn
              do-call
@@ -1584,7 +1641,8 @@ Type: Any -> Boolean"
         ;; that's effectively the same code we'd be running anyway.
         ;; However, we do want to handle the resolution.
         [(or (? mactor:object?)
-             (? mactor:encased?))
+             (? mactor:encased?)
+             (? mactor:encased-multi?))
          (call-with-resolution
           (lambda () (_$ to-refr args)))]
         [(? mactor:local-link?)
@@ -1599,14 +1657,14 @@ Type: Any -> Boolean"
              _void]))]
         [(? mactor:broken?)
          (_<-np resolve-me (list 'break (mactor:broken-problem orig-mactor)))
-         _void]
+         _void-list]
         [(? mactor:remote-link?)
          (let ([point-to (mactor:remote-link-point-to orig-mactor)])
            (call-with-resolution
             (lambda ()
               ;; Pass along the message.
               ;; Only produce a promise if we have a resolver.
-              ((if resolve-me _<- _<-np) point-to args))))]
+              (list ((if resolve-me _<- _<-np) point-to args)))))]
         ;; Messages sent to a promise that is "closer" are a kind of
         ;; intermediate state; we build a queue.
         [(? mactor:closer?)
@@ -1623,7 +1681,7 @@ Type: Any -> Boolean"
               ;; Otherwise, we need to forward this message to the appropriate
               ;; vat
               (_send-message point-to resolve-me args)
-              _void])]
+              _void-list])]
            ;; But if it's a remote promise then we queue it in the waiting
            ;; messages because we prefer to have messages "swim as close
            ;; as possible to the machine barrier where possible", with
@@ -1679,14 +1737,14 @@ Type: Any -> Boolean"
                                                                 args)
                                                   followup-question-finder)
                                  captp-connector))
-                followup-question-promise)]
+                (list followup-question-promise))]
              ;; Otherwise, we can just send it without any question and return
              ;; void
              [else
               (queue-new-msg! (make-forward-to-captp
                                (make-message vat-connector to-question-finder #f args)
                                captp-connector))
-              _void])))])))
+              _void-list])))])))
 
   ;; helper to the below two methods
   (define* (_send-message to-refr resolve-me args
@@ -1771,6 +1829,8 @@ Type: Any -> Boolean"
          (_<-np listener (list 'break (mactor:broken-problem mactor)))]
         [(? mactor:encased? mactor)
          (_<-np listener (list 'fulfill (mactor:encased-val mactor)))]
+        [(? mactor:encased-multi? mactor)
+         (_<-np listener (cons 'fulfill (mactor:encased-multi-vals mactor)))]
         [(? mactor:object? mactor)
          (_<-np listener (list 'fulfill to-refr))]
         ;; For remote links, we resolve directly to that reference
@@ -1796,7 +1856,7 @@ Type: Any -> Boolean"
     ;; or break of the on-refr has actually occurred.
     (define (handle-resolution on-resolution
                                resolve-fulfill-command)
-      (lambda (val)
+      (lambda (vals-or-error)
         (cond [on-resolution
                ;; We can't use _send-message directly, because this may
                ;; be in a separate syscaller at the time it's resolved.
@@ -1808,7 +1868,7 @@ Type: Any -> Boolean"
                             on-resolution
                             ;; Which may be #f!
                             return-p-resolver
-                            (list val))
+                            vals-or-error)
                  (when finally-handler
                    (<-np finally-handler)))]
               ;; There's no on-resolution, which means we can just fulfill
@@ -1817,7 +1877,8 @@ Type: Any -> Boolean"
                (when finally-handler
                  (<-np finally-handler))
                (when return-p-resolver
-                 (<-np return-p-resolver resolve-fulfill-command val))])))
+                 (apply <-np return-p-resolver resolve-fulfill-command
+                        vals-or-error))])))
 
     (define handle-fulfilled
       (handle-resolution fulfilled-handler 'fulfill))
@@ -1829,11 +1890,11 @@ Type: Any -> Boolean"
     ;; queue something to happen *once* it resolves.
     (define (^on-listener bcom)
       (match-lambda*
-        [('fulfill val)
-         (handle-fulfilled val)
+        [('fulfill vals ...)
+         (handle-fulfilled vals)
          _void]
         [('break problem)
-         (handle-broken problem)
+         (handle-broken (list problem))
          _void]))
     (define listener
       (_spawn ^on-listener '() '^on-listener))
@@ -1841,18 +1902,16 @@ Type: Any -> Boolean"
     (when promise?
       return-promise))
 
-  ;; TODO: We only really seem to need/use new-msgs now, so simplify
-  ;; to just hand that back.
-  (define (get-internals)
-    (list actormap new-msgs))
+  (define (get-queued-messages)
+    new-msgs)
 
   (define (set-closed! val)
     (set! closed? val))
 
-  (values this-syscaller get-internals set-closed!))
+  (values this-syscaller get-queued-messages set-closed!))
 
 (define (call-with-fresh-syscaller am proc)
-  (define-values (sys get-sys-internals set-closed!)
+  (define-values (sys get-queued-messages set-closed!)
     (fresh-syscaller am))
   ;; The purpose of closing things is to detect certain kinds of errors
   ;; where the syscaller is captured and remains open post-execution.
@@ -1868,7 +1927,7 @@ Type: Any -> Boolean"
       (set-closed! #f))
     (lambda ()
       (parameterize ([current-syscaller sys])
-        (proc sys get-sys-internals)))
+        (proc sys get-queued-messages)))
     (lambda ()
       (set-closed! #t))))
 
@@ -1909,7 +1968,7 @@ Type: Symbol Constructor Any ... -> Actor"
 
 Type: Actor Any ... -> Any"
   (define sys (get-syscaller-or-die))
-  (sys '$ refr args))
+  (apply values (sys '$ refr args)))
 (define (<- refr . args)
   "Asynchronously invoke REFR with ARGS; return a promise.
 
@@ -2036,9 +2095,9 @@ Type: Promise (Optional (Any -> Any))
 
 (define (^resolver bcom promise sealer)
   (match-lambda*
-    [('fulfill val)
+    [('fulfill vals ...)
      (define sys (get-syscaller-or-die))
-     (sys 'fulfill-promise promise (sealer val))
+     (sys 'fulfill-promise promise (sealer vals))
      (bcom already-resolved)]
     [('break problem)
      (define sys (get-syscaller-or-die))
@@ -2130,7 +2189,7 @@ Type: Actormap Constructor Any ... -> Actor"
     (make-transactormap actormap))
   (call-with-fresh-syscaller
    new-actormap
-   (lambda (sys get-sys-internals)
+   (lambda (sys get-queued-messages)
      (define actor-refr
        (actormap-spawn!* new-actormap actor-constructor
                          args))
@@ -2146,7 +2205,7 @@ Type: Actormap Constructor Any ... -> Actor"
   (define actor-refr
     (call-with-fresh-syscaller
      new-actormap
-     (lambda (sys get-sys-internals)
+     (lambda (sys get-queued-messages)
        (actormap-spawn!* new-actormap actor-constructor args))))
   (transactormap-merge! new-actormap)
   actor-refr)
@@ -2177,11 +2236,10 @@ Type: Actormap Actor Any ... ->
 (Values Any Actormap (List Message ...))"
   (call-with-fresh-syscaller
    actormap
-   (lambda (sys get-sys-internals)
-     (define result-val
+   (lambda (sys get-queued-messages)
+     (define result-vals
        (sys '$ to-refr args))
-     (apply values result-val
-            (get-sys-internals)))))  ; actormap new-msgs
+     (values result-vals (get-queued-messages)))))
 
 (define (actormap-turn actormap to-refr . args)
   "Invoke TO-REFR with ARGS in a new Actormap whose parent is
@@ -2192,7 +2250,9 @@ Type: Actormap Actor Any ... ->
 (Values Any Actormap (List Message ...))"
   (define new-actormap
     (make-transactormap actormap))
-  (actormap-turn* new-actormap to-refr args))
+  (define-values (returned-vals new-messages)
+    (actormap-turn* new-actormap to-refr args))
+  (values returned-vals new-actormap new-messages))
 
 ;; run a turn but only for getting the result.
 ;; we're not interested in committing the result
@@ -2202,10 +2262,10 @@ Type: Actormap Actor Any ... ->
 do not commit the transaction to the transaction history.
 
 Type: Actormap Actor Any ... -> Any"
-  (define-values (returned-val _am _nm)
+  (define-values (returned-vals _nm)
     (actormap-turn* (make-transactormap actormap)
                     to-refr args))
-  returned-val)
+  (apply values returned-vals))
 
 ;; Note that this does nothing with the messages.
 (define (actormap-poke! actormap to-refr . args)
@@ -2213,11 +2273,13 @@ Type: Actormap Actor Any ... -> Any"
 not propagate any messages. Return the results.
 
 Type: Actormap Actor Any ... -> Any"
-  (define-values (returned-val transactormap _nm)
-    (actormap-turn* (make-transactormap actormap)
+  (define transactormap
+    (make-transactormap actormap))
+  (define-values (returned-vals _nm)
+    (actormap-turn* transactormap
                     to-refr args))
   (transactormap-merge! transactormap)
-  returned-val)
+  (apply values returned-vals))
 
 (define (actormap-reckless-poke! actormap to-refr . args)
   "Invoke TO-REFR with ARGS in ACTORMAP, committing the results
@@ -2225,9 +2287,9 @@ directly to ACTORMAP reather than creating a new generation. Return
 the results.
 
 Type: Actormap Actor Any ... -> Any"
-  (define-values (returned-val transactormap _nm)
+  (define-values (returned-vals _nm)
     (actormap-turn* actormap to-refr args))
-  returned-val)
+  (apply values returned-vals))
 
 ;; like actormap-run but also returns the new actormap, new-msgs
 (define (actormap-run* actormap thunk)
@@ -2238,8 +2300,9 @@ transaction, and any messages generated.
 Type: Actormap (-> Any) -> (Values Any Actormap (List Message ...))"
   (define-values (actor-refr new-actormap)
     (actormap-spawn (make-transactormap actormap) (lambda (bcom) thunk)))
-  (define-values (returned-val new-actormap2 new-msgs)
-    (actormap-turn* (make-transactormap new-actormap) actor-refr '()))
+  (define new-actormap2 (make-transactormap new-actormap))
+  (define-values (returned-val new-msgs)
+    (actormap-turn* new-actormap2 actor-refr '()))
   (values returned-val new-actormap2 new-msgs))
 
 ;; non-committal version of actormap-run
@@ -2248,9 +2311,9 @@ Type: Actormap (-> Any) -> (Values Any Actormap (List Message ...))"
 the results to the transaction history.
 
 Type: Actormap (-> Any) -> Any"
-  (define-values (returned-val _am _nm)
+  (define-values (returned-vals _am _nm)
     (actormap-run* (make-transactormap actormap) thunk))
-  returned-val)
+  (apply values returned-vals))
 
 ;; committal version
 ;; Run, and also commit the results of, the code in the thunk
@@ -2334,11 +2397,13 @@ Type: Actormap Message (Optional (#:error-handler (Exception -> Any)))
 -> Any"
   ;; TODO: Kuldgily reimplements part of actormap-turn*... maybe
   ;; there's some opportunity to combine things, dunno.
+  (define new-actormap
+    (if reckless?
+        actormap  ; new actormap, old actormap... same as it ever was
+        (make-transactormap actormap)))
   (call-with-fresh-syscaller
-   (if reckless?
-       actormap
-       (make-transactormap actormap))
-   (lambda (sys get-sys-internals)
+   new-actormap
+   (lambda (sys get-queued-messages)
      (define (error-prompt-handler kont err stack-at-exn)
        ;; Since we threw an exception, we should inform that this
        ;; failed... if anyone cares
@@ -2385,7 +2450,7 @@ Type: Actormap Message (Optional (#:error-handler (Exception -> Any)))
                      3))
        (abort-to-prompt handle-exn-tag err stack))
      (define (do-call)
-       (define result
+       (define result-vals
          (match msg
            [(? message?)
             (sys 'handle-message msg)]
@@ -2394,9 +2459,7 @@ Type: Actormap Message (Optional (#:error-handler (Exception -> Any)))
                  (listen-request-to lr)
                  (listen-request-listener lr)
                  (listen-request-wants-partial? lr))]))
-       (match (get-sys-internals)
-         [(new-actormap new-msgs)
-          (values `#(ok ,result) new-actormap new-msgs)]))
+       (values `#(ok ,result-vals) new-actormap (get-queued-messages)))
      (if catch-errors?
          ;; We're catching errors?  Well, let's capture the stack without
          ;; unwinding, *then* abort to a prompt where it's safe to process
@@ -2438,7 +2501,7 @@ Type: Actormap Message (Optional (#:catch-errors? Boolean))
         am))
   (define this-vat-connector (actormap-vat-connector am))
   (define first-one? #t)
-  (define first-return-val #f)
+  (define first-return-result #f)
   (define (near-msg? msg)
     (define to-refr (message-or-request-to msg))
     (and (local-refr? to-refr)
@@ -2471,13 +2534,13 @@ Type: Actormap Message (Optional (#:catch-errors? Boolean))
       (actormap-turn-message new-am next-msg
                              #:catch-errors? catch-errors?))
     (when first-one?
-      (set! first-return-val this-result)
+      (set! first-return-result this-result)
       (set! first-one? #f))
     ;; queue messages...
     (queue-messages-appropriately! new-msgs)
     ;; merge if appropriate...
     (match this-result
-      [#('ok _result)
+      [#('ok _result-vals)
        (transactormap-buffer-merge! buffer-am)]
       [#('fail err) 'no-op])
     ;; and loop!
@@ -2491,7 +2554,7 @@ Type: Actormap Message (Optional (#:catch-errors? Boolean))
   (churn!)
   ;; And now let's return everything...
   (let ((send-far-msgs (car send-far-q)))
-    (values first-return-val new-am send-far-msgs)))
+    (values first-return-result new-am send-far-msgs)))
 
 (define* (actormap-churn-run actormap thunk
                              #:key [catch-errors? #t])
@@ -2514,11 +2577,6 @@ Type: Actormap (-> Any) (Optional (#:catch-errors? Boolean)) ->
                     #:make-transactormap? #f))  ; reuses new-actormap
   (values returned-val new-actormap new-msgs))
 
-(define-record-type <multival-return-kluge>
-  (make-multival-return-kluge vals)
-  multival-return-kluge?
-  (vals multival-return-kluge-vals))
-
 ;; Also sends out relevant messages, and re-raises exceptions if appropriate
 (define* (actormap-churn-run! actormap thunk
                               #:key [catch-errors? #t])
@@ -2530,22 +2588,14 @@ If CATCH-ERRORS? is #t, capture the stack and abort to a prompt on
 error; otherwise, propogate the error.
 
 Type: Actormap (-> Any) (Optional (#:catch-errors? Boolean)) -> Any"
-  (define (churn-run-values->list . args)
-    (call-with-values thunk
-      (lambda rvals
-        (make-multival-return-kluge rvals))))
-  (define-values (returned-val new-actormap new-msgs)
-    (actormap-churn-run actormap churn-run-values->list
+  (define-values (returned-vals new-actormap new-msgs)
+    (actormap-churn-run actormap thunk
                         #:catch-errors? catch-errors?))
   (dispatch-messages new-msgs)
-  (match returned-val
-    ;; kluge to handle the coroutine case
-    [#('ok (? multival-return-kluge? mrk))
+  (match returned-vals
+    [#('ok vals)
      (transactormap-merge! new-actormap)
-     (apply values (multival-return-kluge-vals mrk))]
-    [#('ok rval)
-     (transactormap-merge! new-actormap)
-     rval]
+     (apply values vals)]
     [#('fail err)
      ;; re-raise exception
      (raise-exception err)]))
