@@ -274,6 +274,38 @@
  '(#f oh-no #t)
  (try-far-on-promise 'break 'oh-no))
 
+(define (^returns-multi _bcom)
+  (lambda ()
+    (values 'a 'b 'c)))
+
+(define (^returns-multi-factory _bcom)
+  (lambda ()
+    (spawn ^returns-multi)))
+
+(define a-multi-factory
+  (with-vat a-vat
+    (spawn ^returns-multi-factory)))
+
+(let ((what-i-got #f)
+      (done? (make-condition)))
+  (with-vat b-vat
+    (on (<- (<- a-multi-factory))
+        (lambda args
+          (set! what-i-got `(yeah ,args)))
+        #:catch
+        (lambda (e)
+          (set! what-i-got `(oh-no ,e)))
+        #:finally
+        (lambda ()
+          (signal-condition! done?))))
+  ;; As with try-far-on-promise, wait up to a second for this to complete
+  (perform-operation (choice-operation
+                      (wait-operation done?)
+                      (sleep-operation 1)))
+  (test-equal "basic promise pipelining across vats with multi-val return"
+    what-i-got
+    '(yeah (a b c))))
+
 ;; Vat event log tests
 
 (let ((t (vat-clock a-vat)))
