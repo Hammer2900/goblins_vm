@@ -45,11 +45,7 @@
             spawn-fibrous-vow
             fibrous
 
-            define-vat-run
-
-            ;; and here's a hack, but maybe someone wants
-            ;; to start with it and tweak it
-            port-redirect-dynamic-wrap))
+            define-vat-run))
 
 ;; Vats
 ;; ----
@@ -109,19 +105,6 @@
 ;;; implement the vat-connnector behavior (currently the handle-message
 ;;; and vat-id methods, though it's not unlikely this module will get
 ;;; out of date... oops)
-
-;; The purpose of this is to prevent issues where a user hacking
-;; with Geiser's buffer evaluation commands (eg C-x C-e)
-;; launches a vat, and things weirdly break... because geiser
-;; sets redirects output so that it can capture it to display to the
-;; user when hacking that way, but those ports are closed at the
-;; end of the evaulation.  But since the vat would run in its own
-;; fiber/thread, any attempts to write to output/error ports would
-;; throw an exception.  This redirects them "back".
-(define (port-redirect-dynamic-wrap proc)
-  (parameterize ((current-output-port %base-output-port)
-                 (current-error-port %base-error-port))
-    (proc)))
 
 (define (generate-random-vat-name)
   (random-name 8))
@@ -237,9 +220,12 @@ be returned to the sender or not."
 (define-syntax-rule (with-vat vat body ...)
   (call-with-vat vat (lambda () body ...)))
 
+(define (no-op-dynamic-wrap proc)
+  (proc))
+
 (define* (make-fibrous-vat #:key (name (generate-random-vat-name))
                            (scheduler (default-vat-scheduler))
-                           (dynamic-wrap port-redirect-dynamic-wrap))
+                           (dynamic-wrap #f))
   (define done? (make-condition))
   (define-values (enq-ch deq-ch stop?)
     (spawn-delivery-agent #:scheduler scheduler))
@@ -273,7 +259,7 @@ be returned to the sender or not."
      (lambda ()
        (run-fibers
         (lambda ()
-          (dynamic-wrap
+          ((or dynamic-wrap no-op-dynamic-wrap)
            (lambda ()
              (syscaller-free
               (lambda ()
@@ -295,7 +281,7 @@ be returned to the sender or not."
 
 (define* (spawn-fibrous-vat #:key (name (generate-random-vat-name))
                             (scheduler (default-vat-scheduler))
-                            (dynamic-wrap port-redirect-dynamic-wrap))
+                            (dynamic-wrap #f))
   (let ((vat (make-fibrous-vat #:name name
                                #:scheduler scheduler
                                #:dynamic-wrap dynamic-wrap)))

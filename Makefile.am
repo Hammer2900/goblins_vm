@@ -55,7 +55,6 @@ SOURCES = goblins.scm \
           goblins/actor-lib/swappable.scm \
           goblins/actor-lib/ticker.scm \
           goblins/actor-lib/ward.scm \
-          goblins/base-io-ports.scm \
           goblins/contrib/syrup.scm \
           goblins/core.scm \
           goblins/default-vat-scheduler.scm \
