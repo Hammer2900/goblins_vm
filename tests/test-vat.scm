@@ -274,9 +274,10 @@
  '(#f oh-no #t)
  (try-far-on-promise 'break 'oh-no))
 
+
 (define (^returns-multi _bcom)
   (lambda ()
-    (values 'a 'b 'c)))
+    (values 'a 'b 'c 'd 'e)))
 
 (define (^returns-multi-factory _bcom)
   (lambda ()
@@ -304,7 +305,28 @@
                       (sleep-operation 1)))
   (test-equal "basic promise pipelining across vats with multi-val return"
     what-i-got
-    '(yeah (a b c))))
+    '(yeah (a b c d e))))
+
+(let ((what-i-got #f)
+      (done? (make-condition)))
+  (with-vat b-vat
+    (on (pick (<- (<- a-multi-factory)) 2)
+        (lambda (val)
+          (set! what-i-got `(yeah ,val)))
+        #:catch
+        (lambda (e)
+          (set! what-i-got `(oh-no ,e)))
+        #:finally
+        (lambda ()
+          (signal-condition! done?))))
+  ;; As with try-far-on-promise, wait up to a second for this to complete
+  (perform-operation (choice-operation
+                      (wait-operation done?)
+                      (sleep-operation 1)))
+  (test-equal "pick works with promise pipelining across vats"
+    what-i-got
+    '(yeah c)))
+
 
 ;; Vat event log tests
 

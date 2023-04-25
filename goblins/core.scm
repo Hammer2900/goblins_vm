@@ -73,6 +73,8 @@
             $ <-np <-
             on
 
+            pick
+
             <-np-extern
             listen-to
 
@@ -2050,6 +2052,15 @@ Type: Promise (Optional (Any -> Any))
        (maybe-actorize broken-handler 'broken-handler)
        (maybe-actorize finally-handler 'finally-handler)
        promise?))
+
+(define* (pick refr #:optional (i 0))
+  "Return a promise representing the I indexed resolved value of REFR.
+Used to select a particular value from a promise which has resolved to
+multiple values."
+  (on refr
+      (lambda args
+        (list-ref args i))
+      #:promise? #t))
 
 
 

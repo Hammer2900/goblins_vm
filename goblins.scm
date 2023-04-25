@@ -66,6 +66,8 @@
                <-np <-
                on
 
+               pick
+
                <-np-extern
                listen-to
 

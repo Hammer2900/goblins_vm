@@ -460,6 +460,17 @@
  (try-out-on am 'break 'i-am-broken)
  '(#f (i-am-broken) #t))
 
+(let ([what-i-got #f])
+  (actormap-churn-run!
+   am (lambda ()
+        (define returns-multi
+          (spawn (lambda _ (lambda _ (values 'a 'b 'c 'd 'e)))))
+        (on (pick (<- returns-multi) 2)
+            (lambda (val)
+              (set! what-i-got val)))))
+  (test-equal "pick allows for picking a value from a promise"
+    what-i-got 'c))
+
 (define (spawn-const val)
   (spawn (lambda _ (lambda _ val))))
 (define (spawn-proc proc)
