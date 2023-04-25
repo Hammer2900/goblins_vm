@@ -84,6 +84,7 @@ SOURCES = goblins.scm \
           goblins/utils/simple-sealers.scm \
           goblins/utils/weak-box.scm \
           goblins/utils/ring-buffer.scm \
+          goblins/utils/list-ref.scm \
           goblins/vat.scm \
           goblins/vrun.scm \
           goblins/repl.scm \
@@ -114,7 +115,8 @@ TESTS = tests/actor-lib/test-cell.scm \
         tests/test-vat.scm \
 	tests/test-repl.scm \
         tests/utils/test-bytes-stuff.scm \
-        tests/utils/test-ring-buffer.scm
+        tests/utils/test-ring-buffer.scm \
+        tests/utils/test-list-ref.scm
 
 TEST_EXTENSIONS = .scm
 SCM_LOG_DRIVER =                                \
