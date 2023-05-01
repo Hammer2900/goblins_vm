@@ -1340,25 +1340,33 @@ Type: Any -> Boolean"
          (call-with-values (lambda ()
                              (call-with-prompt *actor-await-prompt*
                                _do-actor-call _handle-await))
-           (match-lambda*
-             ;; New behavior was specified, so let's replace this current behavior
-             (((? become? returned))
-              ;; The unsealer unseals both the behavior and return-vals anyway
-              (define-values (new-behavior return-vals)
-                (become-unsealer returned))
-              (unless (procedure? new-behavior)
-                (error 'become-failure "Tried to become a non-procedure behavior:"
-                       new-behavior))
-              (actormap-set! actormap to-refr
-                             (make-mactor:object
-                              new-behavior
-                              (mactor:object-become-unsealer mactor)
-                              (mactor:object-become? mactor)))
-              return-vals)
-             (return-vals
-              ;; In this case, we're not becoming anything, so just give us
-              ;; the return-vals
-              return-vals))))]
+           (case-lambda
+             ;; If one value is returned, this might be a become request.
+             ((return-val)
+              (cond
+               ;; New behavior was specified, so let's replace this current behavior
+               ((become? return-val)
+                (let-values (((new-behavior return-vals)
+                              ;; The unsealer unseals both the behavior
+                              ;; and return-vals anyway
+                              (become-unsealer return-val)))
+                  (unless (procedure? new-behavior)
+                    (error 'become-failure "Tried to become a non-procedure behavior:"
+                           new-behavior))
+                  (actormap-set! actormap to-refr
+                                 (make-mactor:object
+                                  new-behavior
+                                  (mactor:object-become-unsealer mactor)
+                                  (mactor:object-become? mactor)))
+                  return-vals))
+               (else
+                ;; Just one behavior returned
+                (list return-val))))
+             ((rval1 rval2) (list rval1 rval2))
+             ((rval1 rval2 rval3) (list rval1 rval2 rval3))
+             ((rval1 rval2 rval3 rval4) (list rval1 rval2 rval3 rval4))
+             ((rval1 rval2 rval3 rval4 rval5) (list rval1 rval2 rval3 rval4 rval5))
+             (return-vals return-vals))))]
       ;; If it's an encased value, "calling" it just returns the
       ;; internal value.
       [(? mactor:encased?)
