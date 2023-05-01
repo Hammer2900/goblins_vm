@@ -13,6 +13,11 @@
 
 (test-begin "test-captp")
 
+(define test-vat (spawn-vat #:name "test"))
+(define test-network
+  (with-vat test-vat
+   (spawn ^fake-network)))
+
 (define (make-new-machine name)
   "Create a new vat, spawns a fake netlayer & mycapn for given `name'"
   (define machine-vat (spawn-vat #:name name))
@@ -28,10 +33,6 @@
      (spawn-mycapn netlayer)))
   (values machine-vat netlayer mycapn))
 
-(define test-vat (spawn-vat #:name "test"))
-(define test-network
-  (with-vat test-vat
-   (spawn ^fake-network)))
 
 
 ;; Spawn different machines.

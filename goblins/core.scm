@@ -1358,19 +1358,19 @@ Type: Any -> Boolean"
                                   new-behavior
                                   (mactor:object-become-unsealer mactor)
                                   (mactor:object-become? mactor)))
-                  return-vals))
+                  (apply values return-vals)))
                (else
                 ;; Just one behavior returned
-                (list return-val))))
-             ((rval1 rval2) (list rval1 rval2))
-             ((rval1 rval2 rval3) (list rval1 rval2 rval3))
-             ((rval1 rval2 rval3 rval4) (list rval1 rval2 rval3 rval4))
-             ((rval1 rval2 rval3 rval4 rval5) (list rval1 rval2 rval3 rval4 rval5))
-             (return-vals return-vals))))]
+                return-val)))
+             ((rval1 rval2) (values rval1 rval2))
+             ((rval1 rval2 rval3) (values rval1 rval2 rval3))
+             ((rval1 rval2 rval3 rval4) (values rval1 rval2 rval3 rval4))
+             ((rval1 rval2 rval3 rval4 rval5) (values rval1 rval2 rval3 rval4 rval5))
+             (return-vals (apply values return-vals)))))]
       ;; If it's an encased value, "calling" it just returns the
       ;; internal value.
       [(? mactor:encased?)
-       (list (mactor:encased-val mactor))]
+       (mactor:encased-val mactor)]
       ;; If encased-multi, we've already got the values as a list.
       [(? mactor:encased-multi?)
        (mactor:encased-multi-vals mactor)]
@@ -1652,17 +1652,21 @@ Type: Any -> Boolean"
              (? mactor:encased?)
              (? mactor:encased-multi?))
          (call-with-resolution
-          (lambda () (_$ to-refr args)))]
+          (lambda ()
+            (call-with-values (lambda () (_$ to-refr args))
+              list)))]
         [(? mactor:local-link?)
          (let ((point-to (mactor:local-link-point-to orig-mactor)))
            (cond
             [(near-refr? point-to)
              (call-with-resolution
-              (lambda () (_$ point-to args)))]
+              (lambda ()
+                (call-with-values (lambda () (_$ point-to args))
+                  list)))]
             ;; it's not near so we need to pass this along
             [else
              (_send-message point-to resolve-me args)
-             _void]))]
+             _void-list]))]
         [(? mactor:broken?)
          (_<-np resolve-me (list 'break (mactor:broken-problem orig-mactor)))
          _void-list]
@@ -1976,7 +1980,7 @@ Type: Symbol Constructor Any ... -> Actor"
 
 Type: Actor Any ... -> Any"
   (define sys (get-syscaller-or-die))
-  (apply values (sys '$ refr args)))
+  (sys '$ refr args))
 (define (<- refr . args)
   "Asynchronously invoke REFR with ARGS; return a promise.
 
@@ -2246,7 +2250,9 @@ Type: Actormap Actor Any ... ->
    actormap
    (lambda (sys get-queued-messages)
      (define result-vals
-       (sys '$ to-refr args))
+       (call-with-values (lambda ()
+                           (sys '$ to-refr args))
+         list))
      (values result-vals (get-queued-messages)))))
 
 (define (actormap-turn actormap to-refr . args)
