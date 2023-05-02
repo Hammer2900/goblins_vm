@@ -805,19 +805,9 @@ Type: Vat -> Void"
 Type: Vat (-> Any) -> Any"
   (if (vat-running? vat)
       (let ((am (vat-actormap vat)))
-        ;; The user provided thunk is going to be called
-        ;; asynchronously within a vat turn, likely in another thread,
-        ;; which makes handling multiple return values tricky.  To
-        ;; make things easy for vat implementations, we wrap up all of
-        ;; the original thunk's return values into a list so there's
-        ;; only a single value to pass back.  Here in the caller's
-        ;; thread, the list gets converted back into multiple return
-        ;; values.
-        (define (multi-value-thunk)
-          (call-with-values thunk list))
         ;; Spawn a throwaway actor whose behavior is just to apply the
         ;; thunk.
-        (define refr (actormap-spawn! am ^call-with-vat multi-value-thunk))
+        (define refr (actormap-spawn! am ^call-with-vat thunk))
         (define msg (make-message (vat-connector vat) refr #f '()))
         (match (vat-send vat (make-vat-envelope msg 0 #t))
           (#('ok vals) (apply values vals))
