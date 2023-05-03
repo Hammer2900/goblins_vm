@@ -126,11 +126,10 @@
   (make-marshallers <op:abort> #:name 'op:abort))
 
 (define-record-type <op:listen>
-  (op:listen to-desc listener-desc wants-partial?)
+  (op:listen to-desc listener-desc)
   op:listen?
   (to-desc op:listen-to-desc)
-  (listener-desc op:listen-listener-desc)
-  (wants-partial? op:listen-wants-partial?))
+  (listener-desc op:listen-listener-desc))
 (define-values (marshall::op:listen unmarshall::op:listen)
   (make-marshallers <op:listen> #:name 'op:listen))
 
@@ -338,11 +337,10 @@
   (msg cmd-send-message-msg))
 
 (define-record-type <cmd-send-listen>
-  (cmd-send-listen to-refr listener-refr wants-partial?)
+  (cmd-send-listen to-refr listener-refr)
   cmd-send-listen?
   (to-refr cmd-send-listen-to-refr)
-  (listener-refr cmd-send-listen-listener-refr)
-  (wants-partial? cmd-send-listen-wants-partial?))
+  (listener-refr cmd-send-listen-listener-refr))
 
 (define-record-type <cmd-send-gc-answer>
   (cmd-send-gc-answer answer-pos)
@@ -402,20 +400,17 @@
       [(or (? message?) (? questioned?))
        (<-np-extern internal-handler
                     (cmd-send-message msg))]
-      [($ <listen-request> _ to-refr listener wants-partial?)
+      [($ <listen-request> _ to-refr listener _)
        (<-np-extern internal-handler
-                    (cmd-send-listen to-refr listener
-                                     wants-partial?))])
+                    (cmd-send-listen to-refr listener))])
     _void)
 
   (define (_partition-unsealer-tm-cons)
     (cons partition-unseal partition-tm?))
 
-  (define* (_listen-request to-refr listen-refr
-                            #:key [wants-partial? #f])
+  (define* (_listen-request to-refr listen-refr)
     (<-np-extern internal-handler
-                 (cmd-send-listen to-refr listen-refr
-                                  wants-partial?)))
+                 (cmd-send-listen to-refr listen-refr)))
 
   (define (^connector-obj _bcom)
     (define intra-machine-beh
@@ -870,14 +865,12 @@
         ;; promise-resolver pair, right here, at the captp perimeter, which
         ;; pipelines the result.
         [($ <op:listen> (? desc:export? to-desc)
-                        (? desc:import? listener-desc)
-                        (? boolean? wants-partial?))
+                        (? desc:import? listener-desc))
          (let ((to-refr
                 (unmarshall-to-desc to-desc))
                (listener
                 (incoming-post-unmarshall! listener-desc)))
-           (listen-to to-refr listener
-                      #:wants-partial? wants-partial?)
+           (listen-to to-refr listener)
            _void)]
         [($ <op:gc-answer> answer-pos)
          (hashv-remove! answers answer-pos)]
@@ -914,12 +907,10 @@
                    (op:deliver-only (marshall-to to)
                                     (outgoing-pre-marshall! args))))
              (send-to-remote deliver-msg))]
-          [($ <cmd-send-listen> (? remote-refr? to-refr) (? local-refr? listener-refr)
-                                (? boolean? wants-partial?))
+          [($ <cmd-send-listen> (? remote-refr? to-refr) (? local-refr? listener-refr))
            (let ((listen-msg
                   (op:listen (marshall-to to-refr)
-                             (outgoing-pre-marshall! listener-refr)
-                             wants-partial?)))
+                             (outgoing-pre-marshall! listener-refr))))
              (send-to-remote listen-msg))]
           [($ <cmd-send-gc-answer> (? integer? answer-pos))
            (send-to-remote (op:gc-answer answer-pos))]
@@ -937,8 +928,7 @@
                         msg))
              (when resolve-me
                (<-np resolve-me 'break (captp-session-severed))))]
-          [($ <cmd-send-listen> (? remote-refr? to-refr) (? local-refr? listener-refr)
-                                (? boolean? wants-partial?))
+          [($ <cmd-send-listen> (? remote-refr? to-refr) (? local-refr? listener-refr))
            (<-np listener-refr 'break (captp-session-severed))]
           [($ <cmd-send-gc-answer> (? integer? answer-pos))
            'no-op]
