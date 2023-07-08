@@ -643,8 +643,8 @@ Type: (Optional (#:name (U String Symbol)))
   (define log (make-vat-log log-capacity))
   (define index (make-hash-table))
   (define vat
-    (%make-vat id name am running? connector 0 clock logging? log
-               start halt send))
+    (%make-vat id (or name (format #f "Vat~a" (number->string id)))
+               am running? connector 0 clock logging? log start halt send))
   (register-vat! vat)
   vat)
 
