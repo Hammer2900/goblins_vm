@@ -28,7 +28,7 @@
      (let* ((output (repl-driver-run driver '(commands ...)))
             (res (string-match regexp output)))
        (test-assert description res)
-       (unless res (format #t "repl-output:[[~a]]" output))))))
+       (unless res (format #t "repl-output:[[~a]]\n" output))))))
 
 (test-repl ",vats with no vats"
            "No vats"
