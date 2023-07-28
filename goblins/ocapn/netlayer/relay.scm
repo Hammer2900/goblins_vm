@@ -74,18 +74,18 @@
   (define-cell client-session-listener #f)
   (define (^relay-endpoint bcom)
     (methods
-     ((incoming-session their-relay-incoming)
+     ((incoming-session their-relay-in)
       (unless ($ client-session-listener)
         (error "Relay endpoint not configured!"))
-      (define our-relay-outgoing (spawn ^session-relay-out 'TODO))
-      (define our-relay-incoming-vow
+      (define our-relay-out (spawn ^session-relay-out 'TODO))
+      (define our-relay-in-vow
         (on (<- client-session-listener 'new-session )
             (lambda ())
             #:promise? #t)
-        (setup-eventual-replay-incoming their-repay-incoming our-replay-outgoing))
-      (define-values (our-relay-incoming our-relay-outgoing)
+        (setup-eventual-replay-incoming their-repay-in our-replay-out))
+      (define-values (our-relay-in our-relay-out)
         'TODO)
-      our-relay-incoming-vow)))
+      our-relay-in-vow)))
   (define (^relay-controller _bcom)
     (methods
      ((set-session-listener new-session-listener)
@@ -95,15 +95,23 @@
       ;; TODO: Do we allow deliver-in to either be a sturdyref or a live
       ;; refr or is it always a sturdyref?
       (define to-endpoint-vow (enliven to-endpoint))
-      (define our-relay-incoming 'TODO)
-      ;; We can't complete the outgoing relay until we 
-      (define our-relay-outgoing-vow
-        (on (<- to-endpoint-vow 'incoming-session our-relay-incoming)
-            (lambda (their-relay-incoming)
-              'TODO)
+      (define our-relay-in 'TODO)
+      (define their-relay-in-vow
+        (<- to-endpoint-vow 'incoming-session our-relay-in))
+      ;; [Note from cwebber, 2023-07-28:]
+      ;; I'm more confident about doing this particular `on' for message
+      ;; ordering semantics, though it may have been fine to hand the
+      ;; ^session-relay-out their-relay-in-vow... it likely is!  I'm
+      ;; just doing too much at once to carefully analyze for sure,
+      ;; and ordering guarantees here is pretty essential
+      (define our-relay-out-vow
+        (on their-relay-in-vow
+            (lambda (their-relay-in)
+              (spawn ^session-relay-out their-relay-in))
             #:promise? #t))
-      ;; hand back the promise which will allow for sending messages
-      our-relay-outgoing-vow)))
+      ;; Hand back the promise which will allow for sending messages
+      ;; once everything is correctly configured
+      our-relay-out-vow)))
   (values (spawn ^relay-endpoint)
           (spawn ^relay-controller)))
 
@@ -117,7 +125,7 @@
    ((abort)
     (error "TODO: abort behavior not implemented"))))
 
-(define (^session-relay-out bcom)
+(define (^session-relay-out bcom their-relay-in)
   'TODO)
 
 
