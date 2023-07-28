@@ -126,7 +126,11 @@
     (error "TODO: abort behavior not implemented"))))
 
 (define (^session-relay-out bcom their-relay-in)
-  'TODO)
+  (methods
+   ((deliver encoded-message)
+    (<-np their-relay-in 'deliver encoded-message))
+   ((abort)
+    (error "TODO: abort behavior not implemented"))))
 
 
 
@@ -247,7 +251,7 @@
                (syrup-decode #:unmarshallers unmarshallers))
              (define (write-message msg marshallers)
                (define encoded-msg (syrup-encode msg #:marshallers marshallers))
-               (<-np-extern session-relay-outgoing encoded-msg))
+               (<-np-extern session-relay-outgoing 'deliver encoded-msg))
              (<- conn-establisher
                  read-message
                  write-message
