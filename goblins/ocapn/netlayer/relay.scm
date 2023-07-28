@@ -70,29 +70,55 @@
 ;; This actually lives *on* the relay vat... ie, it *is* the relay.
 ;; TODO: This needs to handle all the severance stuff when a disconnect
 ;;   happens or a new deliver-to is set up
-(define (spawn-relay-pair)
+(define (spawn-relay-pair enliven)
   (define-cell client-session-listener #f)
   (define (^relay-endpoint bcom)
     (methods
-     ((start-session their-relay-incoming)
+     ((incoming-session their-relay-incoming)
       (unless ($ client-session-listener)
         (error "Relay endpoint not configured!"))
-
+      (define our-relay-outgoing (spawn ^session-relay-out 'TODO))
+      (define our-relay-incoming-vow
+        (on (<- client-session-listener 'new-session )
+            (lambda ())
+            #:promise? #t)
+        (setup-eventual-replay-incoming their-repay-incoming our-replay-outgoing))
       (define-values (our-relay-incoming our-relay-outgoing)
         'TODO)
-
-      ;; TODO: this is where we need to connect to our incoming-session
-      our-relay-outgoing
-      )))
+      our-relay-incoming-vow)))
   (define (^relay-controller _bcom)
     (methods
      ((set-session-listener new-session-listener)
       ($ deliver-to new-session-listener))
      ;; Connect to TO-ENDPOINT, which can be a live ref or a sturdyref
-     ((connect to-endpoint)
-      'TODO)))
+     ((connect to-endpoint deliver-in)
+      ;; TODO: Do we allow deliver-in to either be a sturdyref or a live
+      ;; refr or is it always a sturdyref?
+      (define to-endpoint-vow (enliven to-endpoint))
+      (define our-relay-incoming 'TODO)
+      ;; We can't complete the outgoing relay until we 
+      (define our-relay-outgoing-vow
+        (on (<- to-endpoint-vow 'incoming-session our-relay-incoming)
+            (lambda (their-relay-incoming)
+              'TODO)
+            #:promise? #t))
+      ;; hand back the promise which will allow for sending messages
+      our-relay-outgoing-vow)))
   (values (spawn ^relay-endpoint)
           (spawn ^relay-controller)))
+
+(define (^session-relay-in bcom deliver-in)
+  (methods
+   ;; Pass along message to user's deliver-in
+   ((deliver encoded-message)
+    (<-np deliver-in 'deliver encoded-message))
+   ;; Halt the connection.
+   ;; TODO: Needs work.
+   ((abort)
+    (error "TODO: abort behavior not implemented"))))
+
+(define (^session-relay-out bcom)
+  'TODO)
 
 
 
@@ -190,16 +216,19 @@
        ;; messages (since we're going to need to give it to the other
        ;; endpoint)
        (define (^deliver-in _bcom)
-         (lambda (encoded-message)
+         (methods
+          ((deliver encoded-message)
            ;; We don't decode the message ourselves at this point, we let
            ;; the other side of the fiber, which has the unmarshallers, do
            ;; that
-           (put-message incoming-enq-ch encoded-message)))
+           (put-message incoming-enq-ch encoded-message))
+          ((abort)
+           (error "TODO: abort behavior not implemented"))))
        (define deliver-in (spawn ^deliver-in))
 
        ;; TODO: Should we be giving just the sturdyref to the endpoint
        ;;   or the remote-machine?  I'm not sure.
-       (on (<- relay-controller 'start-session deliver-in remote-machine)
+       (on (<- relay-controller 'connect deliver-in remote-machine)
            (lambda (session-relay-outgoing)
              ;; These two procedures are actually used by the syscaller-free fibers
              ;; that the mycapn / conn-establisher set up which run in their own
