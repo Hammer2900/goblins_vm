@@ -101,7 +101,7 @@
       ;; [Note from cwebber, 2023-07-28:]
       ;; I'm more confident about doing this particular `on' for message
       ;; ordering semantics, though it may have been fine to hand the
-      ;; ^session-relay-out their-relay-in-vow... it likely is!  I'm
+      ;; ^session-relay-out their-relay-in-vow... it maybe is!  I'm
       ;; just doing too much at once to carefully analyze for sure,
       ;; and ordering guarantees here is pretty essential
       (define our-relay-out-vow
