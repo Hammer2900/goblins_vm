@@ -77,14 +77,12 @@
      ((incoming-session their-relay-in)
       (unless ($ client-session-listener)
         (error "Relay endpoint not configured!"))
-      (define our-relay-out (spawn ^session-relay-out 'TODO))
+      (define our-relay-out (spawn ^session-relay-out their-relay-in))
       (define our-relay-in-vow
-        (on (<- client-session-listener 'new-session )
-            (lambda ())
-            #:promise? #t)
-        (setup-eventual-replay-incoming their-repay-in our-replay-out))
-      (define-values (our-relay-in our-relay-out)
-        'TODO)
+        (on (<- client-session-listener 'incoming-session our-relay-out)
+            (lambda (client-deliver-incoming)
+              (spawn ^session-relay-in client-deliver-incoming))
+            #:promise? #t))
       our-relay-in-vow)))
   (define (^relay-controller _bcom)
     (methods
@@ -160,7 +158,8 @@
   (define (start-listener conn-establisher)
     (define (^session-listener _bcom)
       ;; This is where an incoming session comes in...
-      (lambda (relay-outgoing)
+      (methods
+       ((incoming-session relay-outgoing)
         ;; So we need to spawn the delivery agent here then wrap the
         ;; two procedures...
         (<-np conn-establisher
@@ -171,6 +170,8 @@
               ;; Does that need to be delivered as an arugment to the session-listener?
               #t)
         ;; Now we need to head back the client-deliver-incoming
+
+        )
         
         ))
     (define listener (spawn ^session-listener))
