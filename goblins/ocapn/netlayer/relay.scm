@@ -17,6 +17,7 @@
   #:use-module (fibers channels)
   #:use-module (goblins core)
   #:use-module (goblins vat)
+  #:use-module (goblins inbox)
   #:use-module (goblins actor-lib cell)
   #:use-module (goblins actor-lib methods)
   #:use-module (goblins actor-lib queue)
@@ -135,44 +136,45 @@
 ;;; ===========
 
 ;; This lives on the "relay client"
+
+;; We're going to hand the connection establisher, as usual for
+;; netlayers, a (blocking) method to read messages and a (blocking)
+;; method to write messages.  The connection establisher informs
+;; our mycapn of our interest in establishing a new connection,
+;; which our mycapn does for us.
+;;
+;; We're going to do this via two means:
+;;
+;;  - Incoming messages: An actor which receives messages over
+;;    ordinary ocapn abstracted over some other netlayer we're
+;;    using.  This actor then sends a message to an intermediary
+;;    fibers "inbox" (delivery agent from `(goblins inbox)').
+;;    The `read-message' procedure we end up finally setting up
+;;    reads from this channel so that the actor can deliver
+;;    messages to a blocking interface without itself blocking
+;;  - Outgoing messages: These are much easier, as we can simply
+;;    serialize the message and fire it off to the remote actor.
 (define (^relay-netlayer bcom enliven relay-endpoint-sref relay-controller)
   (define our-location
     (relay-sturdyref->relay-machine relay-endpoint-sref))
-
-  ;; Spawns the deliver-out code, the deliver-in code,
-  ;; as well as the reader and the writer wrapping them to deliver back
-  ;; to mycapn via the conn-establisher
-  (define (spawn-client-delivery-agents conn-establisher)
-    ;; The asynchronous inbox
-
-    (define (^deliver-out _bcom)
-      'TODO)
-    (define (^deliver-in _bcom)
-      'TODO)
-
-
-    (values deliver-out deliver-in
-            reader writer))
 
   (define (start-listener conn-establisher)
     (define (^session-listener _bcom)
       ;; This is where an incoming session comes in...
       (methods
-       ((incoming-session relay-outgoing)
-        ;; So we need to spawn the delivery agent here then wrap the
-        ;; two procedures...
+       ((incoming-session session-relay-outgoing)
+        (define-values (client-deliver-in incoming-deq-ch incoming-stop?)
+          (setup-delivery-agent-and-actor))
+        (define-values (read-message write-message)
+          (make-read-write-message incoming-deq-ch session-relay-outgoing))
         (<-np conn-establisher
-              'TODO-READER
-              'TODO-WRITER
+              read-message write-message
               ;; TODO: update with jessica's new code... wtf do we do
               ;; here again... something hand over the machine or etc???
               ;; Does that need to be delivered as an arugment to the session-listener?
               #t)
-        ;; Now we need to head back the client-deliver-incoming
-
-        )
-        
-        ))
+        ;; Now we need to return the client-deliver-in
+        client-deliver-in)))
     (define listener (spawn ^session-listener))
     ;; Tell the remote endpoint that we're looking for incoming connections
     (<-np relay-controller 'set-session-listener listener))
@@ -202,56 +204,15 @@
        ;; (define remote-endpoint-sref (relay-machine->relay-sturdyref remote-machine))
        ;; ;; Now we need to enliven it
        ;; (define remote-endpoint-vow (enliven remote-endpoint-sref))
-       
-       ;; We're going to hand the connection establisher, as usual for
-       ;; netlayers, a (blocking) method to read messages and a (blocking)
-       ;; method to write messages.  The connection establisher informs
-       ;; our mycapn of our interest in establishing a new connection,
-       ;; which our mycapn does for us.
-       ;;
-       ;; We're going to do this via two means:
-       ;;
-       ;;  - Incoming messages: An actor which receives messages over
-       ;;    ordinary ocapn abstracted over some other netlayer we're
-       ;;    using.  This actor then sends a message to an intermediary
-       ;;    fibers "inbox" (delivery agent from `(goblins inbox)').
-       ;;    The `read-message' procedure we end up finally setting up
-       ;;    reads from this channel so that the actor can deliver
-       ;;    messages to a blocking interface without itself blocking
-       ;;  - Outgoing messages: These are much easier, as we can simply
-       ;;    serialize the message and fire it off to the remote actor.
-       ;;
-       ;; So, the first thing we need to do... let's set up the inbox...
-       (define-values (incoming-enq-ch incoming-deq-ch incoming-stop?)
-         (spawn-delivery-agent))
-       ;; Now we need to set up our delivery proxy which will receive
-       ;; messages (since we're going to need to give it to the other
-       ;; endpoint)
-       (define (^deliver-in _bcom)
-         (methods
-          ((deliver encoded-message)
-           ;; We don't decode the message ourselves at this point, we let
-           ;; the other side of the fiber, which has the unmarshallers, do
-           ;; that
-           (put-message incoming-enq-ch encoded-message))
-          ((abort)
-           (error "TODO: abort behavior not implemented"))))
-       (define deliver-in (spawn ^deliver-in))
+       (define-values (deliver-in incoming-deq-ch incoming-stop?)
+         (setup-delivery-agent-and-actor))
 
        ;; TODO: Should we be giving just the sturdyref to the endpoint
        ;;   or the remote-machine?  I'm not sure.
        (on (<- relay-controller 'connect deliver-in remote-machine)
            (lambda (session-relay-outgoing)
-             ;; These two procedures are actually used by the syscaller-free fibers
-             ;; that the mycapn / conn-establisher set up which run in their own
-             ;; loop.  So this is *not* happening in a Goblins context, and these
-             ;; two will block
-             (define (read-message unmarshallers)
-               (define encoded-message (get-message incoming-deq-ch))
-               (syrup-decode #:unmarshallers unmarshallers))
-             (define (write-message msg marshallers)
-               (define encoded-msg (syrup-encode msg #:marshallers marshallers))
-               (<-np-extern session-relay-outgoing 'deliver encoded-msg))
+             (define-values (read-message write-message)
+               (make-read-write-message incoming-deq-ch session-relay-outgoing))
              (<- conn-establisher
                  read-message
                  write-message
@@ -260,4 +221,48 @@
            #:promise? #t))))
   pre-setup-beh)
 
+;;; Helpers for the ^relay-controller machinery.
+;;; The following code is used for both outgoing and incoming connections
+;;; but is used a little bit differently.  Most notably there is a delay
+;;; in-between when the session-relay-outgoing is set up because of needing
+;;; to hear something back from the relay-controller on outgoing connections.
+;;; That said, it's possible that a clever use of promises could solve
+;;; this problem, not certain.
 
+;;; TODO: (It probably is possible, that might be my next commit ;])
+
+;; Set up the client-deliver-in actor as well as the inbox/outbox
+;; queues used to communicate between it and the read-message procedure
+;; which we will hand to the
+(define (setup-delivery-agent-and-actor)
+  ;; So, the first thing we need to do... let's set up the inbox...
+  (define-values (incoming-enq-ch incoming-deq-ch incoming-stop?)
+    (spawn-delivery-agent))
+  ;; Now we need to set up our delivery proxy which will receive
+  ;; messages (since we're going to need to give it to the other
+  ;; endpoint)
+  (define (^client-deliver-in _bcom)
+    (methods
+     ((deliver encoded-message)
+      ;; We don't decode the message ourselves at this point, we let
+      ;; the other side of the fiber, which has the unmarshallers, do
+      ;; that
+      (put-message incoming-enq-ch encoded-message))
+     ((abort)
+      (error "TODO: abort behavior not implemented"))))
+  (define client-deliver-in (spawn ^client-deliver-in))
+  (values client-deliver-in incoming-deq-ch incoming-stop?))
+
+
+;; These two procedures are actually used by the syscaller-free fibers
+;; that the mycapn / conn-establisher set up which run in their own
+;; loop.  So this is *not* happening in a Goblins context, and these
+;; two will block
+(define (make-read-write-message incoming-deq-ch session-relay-outgoing)
+  (define (read-message unmarshallers)
+    (define encoded-message (get-message incoming-deq-ch))
+    (syrup-decode encoded-message #:unmarshallers unmarshallers))
+  (define (write-message msg marshallers)
+    (define encoded-msg (syrup-encode msg #:marshallers marshallers))
+    (<-np-extern session-relay-outgoing 'deliver encoded-msg))
+  (values read-message write-message))
