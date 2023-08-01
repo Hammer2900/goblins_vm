@@ -93,7 +93,8 @@
       ;; TODO: Do we allow deliver-in to either be a sturdyref or a live
       ;; refr or is it always a sturdyref?
       (define to-endpoint-vow (enliven to-endpoint))
-      (define our-relay-in 'TODO)
+      (define our-relay-in
+        (spawn ^session-relay-in deliver-in))
       (define their-relay-in-vow
         (<- to-endpoint-vow 'incoming-session our-relay-in))
       ;; [Note from cwebber, 2023-07-28:]
