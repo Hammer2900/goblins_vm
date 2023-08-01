@@ -86,8 +86,6 @@
       our-relay-in-vow)))
   (define (^relay-controller _bcom)
     (methods
-     ((set-session-listener new-session-listener)
-      ($ deliver-to new-session-listener))
      ;; Connect to TO-ENDPOINT, which can be a live ref or a sturdyref
      ((connect to-endpoint deliver-in)
       ;; TODO: Do we allow deliver-in to either be a sturdyref or a live
