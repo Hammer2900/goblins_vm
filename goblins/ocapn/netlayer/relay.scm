@@ -163,10 +163,8 @@
       ;; This is where an incoming session comes in...
       (methods
        ((incoming-session session-relay-outgoing)
-        (define-values (client-deliver-in incoming-deq-ch incoming-stop?)
-          (setup-delivery-agent-and-actor))
         (define-values (read-message write-message)
-          (make-read-write-message incoming-deq-ch session-relay-outgoing))
+          (delivery-setup session-relay-outgoing))
         (<-np conn-establisher
               read-message write-message
               ;; TODO: update with jessica's new code... wtf do we do
@@ -202,23 +200,15 @@
        ;; ;; First that means deconstructing the URI so we can get out
        ;; ;; the relevant sturdyref object
        ;; (define remote-endpoint-sref (relay-machine->relay-sturdyref remote-machine))
-       ;; ;; Now we need to enliven it
-       ;; (define remote-endpoint-vow (enliven remote-endpoint-sref))
-       (define-values (deliver-in incoming-deq-ch incoming-stop?)
-         (setup-delivery-agent-and-actor))
+       (define session-relay-outgoing-vow
+         (<- relay-controller 'connect deliver-in remote-machine))
+       (define-values (read-message write-message)
+         (delivery-setup session-relay-outgoing-vow))
 
-       ;; TODO: Should we be giving just the sturdyref to the endpoint
-       ;;   or the remote-machine?  I'm not sure.
-       (on (<- relay-controller 'connect deliver-in remote-machine)
-           (lambda (session-relay-outgoing)
-             (define-values (read-message write-message)
-               (make-read-write-message incoming-deq-ch session-relay-outgoing))
-             (<- conn-establisher
-                 read-message
-                 write-message
-                 ;; TODO: Switch to Jessica's latest code here
-                 #f))
-           #:promise? #t))))
+       (<- conn-establisher
+           read-message
+           write-message
+           #t))))
   pre-setup-beh)
 
 ;;; Helpers for the ^relay-controller machinery.
@@ -229,12 +219,7 @@
 ;;; That said, it's possible that a clever use of promises could solve
 ;;; this problem, not certain.
 
-;;; TODO: (It probably is possible, that might be my next commit ;])
-
-;; Set up the client-deliver-in actor as well as the inbox/outbox
-;; queues used to communicate between it and the read-message procedure
-;; which we will hand to the
-(define (setup-delivery-agent-and-actor)
+(define (delivery-setup session-relay-outgoing)
   ;; So, the first thing we need to do... let's set up the inbox...
   (define-values (incoming-enq-ch incoming-deq-ch incoming-stop?)
     (spawn-delivery-agent))
@@ -251,14 +236,6 @@
      ((abort)
       (error "TODO: abort behavior not implemented"))))
   (define client-deliver-in (spawn ^client-deliver-in))
-  (values client-deliver-in incoming-deq-ch incoming-stop?))
-
-
-;; These two procedures are actually used by the syscaller-free fibers
-;; that the mycapn / conn-establisher set up which run in their own
-;; loop.  So this is *not* happening in a Goblins context, and these
-;; two will block
-(define (make-read-write-message incoming-deq-ch session-relay-outgoing)
   (define (read-message unmarshallers)
     (define encoded-message (get-message incoming-deq-ch))
     (syrup-decode encoded-message #:unmarshallers unmarshallers))
