@@ -41,7 +41,6 @@
             (ice-9 match)
             (rnrs bytevectors)
             (prefix (gcrypt pk-crypto) gcrypt:pk-crypto:)
-            (gcrypt hash)
             (gnutls))))
 
   (begin
@@ -63,7 +62,10 @@
       (define (data->canonical-sexp data)
         (gcrypt:pk-crypto:sexp->canonical-sexp
          `(data (flags eddsa) (hash-algo sha512)
-           (value ,data)))))
+           (value ,data))))
+
+      (define (sha256 input)
+        (hash-direct digest/sha256 input)))
      (hoot
       ;; Import FFI Stuff
       ;; ================
