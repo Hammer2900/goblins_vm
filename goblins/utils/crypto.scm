@@ -42,7 +42,7 @@
             (rnrs bytevectors)
             (prefix (gcrypt pk-crypto) gcrypt:pk-crypto:)
             (gcrypt hash)
-            (gcrypt random))))
+            (gnutls))))
 
   (begin
     (define (sha256d input)
@@ -54,7 +54,7 @@
 
     (define (strong-random-bytes byte-size)
       (cond-expand
-       (guile (gen-random-bv byte-size %gcry-strong-random))
+       (guile (gnutls-random random-level/key byte-size))
        (hoot (gen-random-bv byte-size))))
 
     ;; Some guile or hoot specific functions which need to be define.
