@@ -22,12 +22,13 @@
 (test-begin "test-repl")
 
 (define-syntax-rule (test-repl description regexp commands ...)
-  (test-assert description
-    (call-with-repl-driver
-     (lambda (driver)
-       (repl-driver-meta driver '(import (goblins)))
-       (let ((output (repl-driver-run driver '(commands ...))))
-         (string-match regexp output))))))
+  (call-with-repl-driver
+   (lambda (driver)
+     (repl-driver-meta driver '(import (goblins)))
+     (let* ((output (repl-driver-run driver '(commands ...)))
+            (res (string-match regexp output)))
+       (test-assert description res)
+       (unless res (format #t "repl-output:[[~a]]\n" output))))))
 
 (test-repl ",vats with no vats"
            "No vats"
