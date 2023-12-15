@@ -22,7 +22,8 @@
   (gnu packages pkg-config)
   (gnu packages texinfo)
   (gnu packages tls)
-  (srfi srfi-1))
+  (srfi srfi-1)
+  (srfi srfi-98))
 
 ;; This is needed for generating x509 certificates, we should remove it and rely
 ;; on guix's package for this once it's in the repos.
@@ -40,6 +41,14 @@
               (sha256
                (base32
                 "0ldnxq5qxzy92jd8w5c717bgx4038x9qmi43bzl6kmlkzpagqayy"))))))
+
+;; Compiling guile-gnutls seems to fail in CI, probably being killed for using
+;; too many resources. It's difficult to debug. Since we don't currently have
+;; any tests needing to generate x509 certs, fallback to the pkg from guix in CI.
+(define guile-gnutls-pkg
+  (if (get-environment-variable "CI")
+      guile-gnutls
+      guile-gnutls-3.7.14))
 
 (define (keep-file? file stat)
   (not (any (lambda (my-string)
@@ -69,7 +78,7 @@
      texinfo))
   (inputs (list guile-3.0))
   (propagated-inputs
-   (list guile-fibers guile-gcrypt guile-gnutls-3.7.14))
+   (list guile-fibers guile-gcrypt guile-gnutls-pkg))
   (synopsis "Transactional, distributed object programming environment")
   (description
    "Spritely Goblins is a transactional, distributed object programming
