@@ -24,6 +24,23 @@
   (gnu packages tls)
   (srfi srfi-1))
 
+;; This is needed for generating x509 certificates, we should remove it and rely
+;; on guix's package for this once it's in the repos.
+(define guile-gnutls-3.7.14
+  (package
+    (inherit guile-gnutls)
+    (name "guile-gnutls")
+    (version "3.7.14")
+    (source (origin
+              (method url-fetch)
+              (uri (string-append
+                    "https://gitlab.com/gnutls/guile/uploads/"
+                    "1fdc941351d54cd7affda1bb912b9ca5"
+                    "/guile-gnutls-" version ".tar.gz"))
+              (sha256
+               (base32
+                "0ldnxq5qxzy92jd8w5c717bgx4038x9qmi43bzl6kmlkzpagqayy"))))))
+
 (define (keep-file? file stat)
   (not (any (lambda (my-string)
               (string-contains file my-string))
@@ -52,7 +69,7 @@
      texinfo))
   (inputs (list guile-3.0))
   (propagated-inputs
-   (list guile-fibers guile-gcrypt guile-gnutls))
+   (list guile-fibers guile-gcrypt guile-gnutls-3.7.14))
   (synopsis "Transactional, distributed object programming environment")
   (description
    "Spritely Goblins is a transactional, distributed object programming
