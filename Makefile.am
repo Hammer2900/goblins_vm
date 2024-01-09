@@ -172,7 +172,6 @@ EXTRA_DIST += README.org \
               ChangeLog \
               bootstrap.sh \
               guix.scm \
-              coverage.scm \
               manifest.scm \
               live-guile.sh \
               .gitlab-ci.yml \
