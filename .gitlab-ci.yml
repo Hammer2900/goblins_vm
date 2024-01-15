@@ -38,7 +38,7 @@ code-coverage:
     - ./configure
     - make
     # Run the tests with coverage on.
-    - ./pre-inst-env guile ./misc/coverage.scm
+    - ./pre-inst-env make chck
     # Convert the generated lcov into something Gitlab understands (Cobertura formatted XML file)
     - ./misc/lcov_to_xml.py > coverage.xml
   # From: https://docs.gitlab.com/ee/ci/testing/test_coverage_visualization.html
