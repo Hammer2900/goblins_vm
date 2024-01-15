@@ -36,13 +36,12 @@ code-coverage:
     # Configure & Build
     - sh ./bootstrap.sh
     - ./configure
-    - make
     # Run the tests with coverage on.
-    - ./pre-inst-env make chck
+    - ./pre-inst-env ./pre-inst-env guile --debug ./misc/coverage.scm
     # Convert the generated lcov into something Gitlab understands (Cobertura formatted XML file)
     - ./misc/lcov_to_xml.py > coverage.xml
   # From: https://docs.gitlab.com/ee/ci/testing/test_coverage_visualization.html
-  coverage: '/(?i)total.*? (100(?:\.0+)?\%|[1-9]?\d(?:\.\d+)?\%)$/'
+  coverage: '/(\d+\.\d+)%/'
   artifacts:
     reports:
       coverage_report:

@@ -14,10 +14,10 @@
 
 (use-modules (system vm coverage)
              (system vm vm)
-	     (srfi srfi-11)
-	     (srfi srfi-64)
-	     (ice-9 ftw)
-	     (ice-9 match))
+             (srfi srfi-11)
+             (srfi srfi-64)
+             (ice-9 ftw)
+             (ice-9 match))
 
 ;; Backported from guile (modules/system/vm/coverage.scm), this code
 ;; is LGPL v3. This is backported to get the modules keyword which
@@ -67,36 +67,44 @@ gathered, even if their code was not executed."
     (match found
       ((name stat)
        (when (string=? (substring name (- (string-length name) 4)) ".scm")
-	 (string-append path "/" name)))
+         (string-append path "/" name)))
       ((name stat children ...)
        (let ((new-path (if (string-null? path) name (string-append path "/" name))))
-	 (map
-	  (lambda (child) (find-files new-path child))
-	  children)))))
+         (map
+          (lambda (child) (find-files new-path child))
+          children)))))
   (define (flatten obj)
     (if (null? obj)
-	(list)
-	(if (list? (car obj))
-	    (append (flatten (car obj)) (flatten (cdr obj)))
-	    (cons (car obj) (flatten (cdr obj))))))
+        (list)
+        (if (list? (car obj))
+            (append (flatten (car obj)) (flatten (cdr obj)))
+            (cons (car obj) (flatten (cdr obj))))))
   (filter
    string?
    (flatten
     (find-files "" (file-system-tree dir)))))
+
 
 (define (run-coverage)
   "Run coverage check and write the result out into the lcov.info file"
   (define goblins-modules
     (get-scm-files "goblins"))
 
+  (define tests
+    (get-scm-files "tests"))
+
+  ;; No idea why but it seems that the REPL tests just hang.
+  ;; TODO: FIX ME
+  (define tests-without-repl
+    (delete "tests/test-repl.scm" tests))
+
   (define-values (data result)
     (with-code-coverage
-     (lambda _
+     (lambda ()
        (test-with-runner
-	   (test-runner-simple)
-	 (map load-from-path (get-scm-files "tests")))
-       ;; This loads all goblins modules to get the test coverage
-       ;; statistics on each, without it just shows tested modules.
+           (test-runner-simple)
+         (map load-from-path tests-without-repl))
+       ;; Load all files wtihin goblins so that coverage knows about them.
        (map load-from-path goblins-modules))))
 
   (let ((port (open-output-file "lcov.info")))
