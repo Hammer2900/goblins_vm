@@ -196,3 +196,9 @@ combine-junit-xml-results:
 	$(GUILE) $(top_srcdir)/misc/combine-junit-xml.scm \
 	test-results.xml \
         $(TESTS:%.scm=%.xml)
+
+coverage:
+	$(top_srcdir)/pre-inst-env $(GUILE) --debug --no-auto-compile \
+		$(top_srcdir)/misc/coverage.scm \
+		--tests $(TESTS) \
+		--src $(SOURCES)

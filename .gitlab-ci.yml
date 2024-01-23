@@ -38,10 +38,12 @@ code-coverage:
     - ./configure
     # Run the tests with coverage on.
     - ./pre-inst-env ./pre-inst-env guile --debug ./misc/coverage.scm
+    # Generate the HTML which will give us a % covered output
+    - genhtml -o /tmp/goblins-coverage lcov.info
     # Convert the generated lcov into something Gitlab understands (Cobertura formatted XML file)
     - ./misc/lcov_to_xml.py > coverage.xml
   # From: https://docs.gitlab.com/ee/ci/testing/test_coverage_visualization.html
-  coverage: '/(\d+\.\d+)%/'
+  coverage: '/lines.*?: (\d+\.\d+)%/'
   artifacts:
     reports:
       coverage_report:

@@ -60,53 +60,59 @@ gathered, even if their code was not executed."
                               file)))))
             source-files))
 
-
-(define (get-scm-files dir)
-  "Recursively finds all the .scm files in a given directory"
-  (define (find-files path found)
-    (match found
-      ((name stat)
-       (when (string=? (substring name (- (string-length name) 4)) ".scm")
-         (string-append path "/" name)))
-      ((name stat children ...)
-       (let ((new-path (if (string-null? path) name (string-append path "/" name))))
-         (map
-          (lambda (child) (find-files new-path child))
-          children)))))
-  (define (flatten obj)
-    (if (null? obj)
-        (list)
-        (if (list? (car obj))
-            (append (flatten (car obj)) (flatten (cdr obj)))
-            (cons (car obj) (flatten (cdr obj))))))
-  (filter
-   string?
-   (flatten
-    (find-files "" (file-system-tree dir)))))
-
-
-(define (run-coverage)
+(define (run-coverage arguments)
   "Run coverage check and write the result out into the lcov.info file"
-  (define goblins-modules
-    (get-scm-files "goblins"))
-
-  (define tests
-    (get-scm-files "tests"))
+  (define src-files
+    (assq-ref arguments 'src))
 
   ;; No idea why but it seems that the REPL tests just hang.
   ;; TODO: FIX ME
   (define tests-without-repl
-    (delete "tests/test-repl.scm" tests))
+    (delete "tests/test-repl.scm" (assq-ref arguments 'tests)))
 
   (define-values (data result)
     (with-code-coverage
      (lambda ()
        (test-with-runner
-           (test-runner-simple)
+           (test-runner-null)
          (map load-from-path tests-without-repl))
        ;; Load all files wtihin goblins so that coverage knows about them.
-       (map load-from-path goblins-modules))))
+       (map load-from-path src-files))))
 
   (let ((port (open-output-file "lcov.info")))
-    (backport/coverage-data->lcov data port #:modules goblins-modules)))
-(run-coverage)
+    (backport/coverage-data->lcov data port #:modules src-files)))
+
+;; Ideally we'd use getopt-long but unfortunately it doesn't seem to work for a
+;; single flag taking many arguments e.g.
+;; --src <src-file ...> --tests <test-file ..>
+(define (parse-args args)
+  "Collects each option given based on the command line flag provided"
+  (define (is-option? argument)
+    (string-prefix? "--" argument))
+  (define (parse args current-option result)
+    (match args
+      [() result]
+      [((? is-option? option) rest ...)
+       (parse rest
+              (string->symbol (substring option 2))
+              result)]
+      [(argument rest ...)
+       (parse rest
+              current-option
+              (if current-option
+                  (assq-set! result
+                             current-option
+                             (cons argument (or (assq-ref result current-option) '())))
+                  result))]))
+  (parse args #f '()))
+
+(define arguments
+  (parse-args (command-line)))
+
+(unless (and (assq-ref arguments 'tests)
+             (assq-ref arguments 'src))
+  (format current-error-port
+          "Usage: ~a --src <src-file ...> --tests <test-file ...>"
+          (car (command-line))))
+
+(run-coverage arguments)
