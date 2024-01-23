@@ -109,10 +109,9 @@ gathered, even if their code was not executed."
 (define arguments
   (parse-args (command-line)))
 
-(unless (and (assq-ref arguments 'tests)
-             (assq-ref arguments 'src))
-  (format current-error-port
-          "Usage: ~a --src <src-file ...> --tests <test-file ...>"
-          (car (command-line))))
-
-(run-coverage arguments)
+(if (and (assq-ref arguments 'tests)
+         (assq-ref arguments 'src))
+    (run-coverage arguments)
+    (format (current-error-port)
+            "Usage: ~a --src <src-file ...> --tests <test-file ...>"
+            (car (command-line))))

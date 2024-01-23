@@ -2,7 +2,6 @@ image: registry.gitlab.com/spritely/guile-goblins:latest
 
 stages:
   - build
-  - coverage
 
 unit-tests:
   stage: build
@@ -31,13 +30,13 @@ perf-tests:
       metrics: 'perf-metrics.txt'
 
 code-coverage:
-  stage: coverage
+  stage: build
   script:
     # Configure & Build
     - sh ./bootstrap.sh
     - ./configure
     # Run the tests with coverage on.
-    - ./pre-inst-env ./pre-inst-env guile --debug ./misc/coverage.scm
+    - make coverage
     # Generate the HTML which will give us a % covered output
     - genhtml -o /tmp/goblins-coverage lcov.info
     # Convert the generated lcov into something Gitlab understands (Cobertura formatted XML file)
