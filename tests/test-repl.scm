@@ -40,12 +40,12 @@
            (meta vats))
 
 (test-repl ",enter-vat using an id"
-           "Entering vat '0'"
+           "Entering vat 'Vat0'"
            (eval (define a-vat (spawn-vat)))
            (meta enter-vat 0))
 
 (test-repl ",enter-vat using a vat object"
-           "Entering vat '0'"
+           "Entering vat 'Vat0'"
            (eval (define a-vat (spawn-vat)))
            (meta enter-vat a-vat))
 

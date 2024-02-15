@@ -568,17 +568,16 @@ Display a tree view of events starting at TIMESTAMP in the current vat."
                      vat-events)
           (hashv-set! table t #t)))
       table))
-  (define (vat-name-string vat-connector)
-    (format #f "~a" (vat-connector 'name)))
+  (define (vat-connector->id vat-connector) (number->string (object-address vat-connector)))
   ;; Helpers for generating graph node names.
-  (define (vat-node-name vat-name)
-    (format #f "vat_~a" vat-name))
-  (define (msg-node-name vat-name t)
-    (format #f "msg_~a_~a" vat-name t))
+  (define (vat-node-name vat-connector-id)
+    (format #f "vat_~a" vat-connector-id))
+  (define (msg-node-name vat-connector-id t)
+    (format #f "msg_~a_~a" vat-connector-id t))
   (define timeline-edge-color "slategray")
-  (define (vat-root-node vat-name)
-    `(node ,(vat-node-name vat-name)
-           (@ (group ,vat-name)
+  (define (vat-root-node vat-connector-id)
+    `(node ,(vat-node-name vat-connector-id)
+           (@ (group ,vat-connector-id)
               (shape "point")
               (color ,timeline-edge-color)
               (height "0.05"))))
@@ -604,14 +603,14 @@ Display a tree view of events starting at TIMESTAMP in the current vat."
                     (else
                      (error "unknown message" msg)))))))
   ;; Node constructor for timestamps with an event.
-  (define (event-node event vat-name t)
-    `(node ,(msg-node-name vat-name t)
+  (define (event-node event vat-connector-id t)
+    `(node ,(msg-node-name vat-connector-id t)
            (@ (label ,(event-label event))
-              (group ,vat-name))))
+              (group ,vat-connector-id))))
   ;; Node constructor for timestamps where nothing happened.
-  (define (empty-node vat-name t)
-    `(node ,(msg-node-name vat-name t)
-           (@ (group ,vat-name)
+  (define (empty-node vat-connector-id t)
+    `(node ,(msg-node-name vat-connector-id t)
+           (@ (group ,vat-connector-id)
               (shape "point")
               (color ,timeline-edge-color)
               (height "0.05"))))
@@ -627,7 +626,7 @@ Display a tree view of events starting at TIMESTAMP in the current vat."
   ;; is the edge type used to represent cross-vat messaging.
   (define (cross-vat-edge vat-connector timestamp target)
     `(edge ,target
-           ,(msg-node-name (vat-connector 'name) timestamp)
+           ,(msg-node-name (vat-connector->id vat-connector) timestamp)
            (@ (constraint "false")
               (arrowhead "normal")
               (arrowsize "0.75")
@@ -652,8 +651,8 @@ Display a tree view of events starting at TIMESTAMP in the current vat."
   ;; churn.  Generates a portion of a vat timeline from 'start-t' to
   ;; 'end-t'.
   (define (churn-graph vat-connector events start-t end-t prev-node churn)
-    (let* ((vat-name (vat-name-string vat-connector))
-           (cluster-name (format #f "cluster_churn_~a_~a" vat-name churn)))
+    (let* ((vat-connector-id (vat-connector->id vat-connector))
+           (cluster-name (format #f "cluster_churn_~a_~a" vat-connector-id churn)))
       (let loop ((t start-t)
                  (prev-node prev-node)
                  (nodes '())
@@ -676,8 +675,8 @@ Display a tree view of events starting at TIMESTAMP in the current vat."
            ;; the associated event and add a node to the graph.
            ((<= t end-t)
             (let* ((node (if event
-                             (event-node event vat-name t)
-                             (empty-node vat-name t)))
+                             (event-node event vat-connector-id t)
+                             (empty-node vat-connector-id t)))
                    (near-edge (timeline-edge prev-node node))
                    ;; Each edge is a 2 element list containing the far
                    ;; vat connector and the far timestamp for the
@@ -705,8 +704,8 @@ Display a tree view of events starting at TIMESTAMP in the current vat."
   ;; This graph is further broken into sub-graphs for each churn.
   ;; Timestamps with no event are excluded from churn sub-graphs.
   (define (vat-graph vat-connector events min-t max-t)
-    (let* ((vat-name (vat-name-string vat-connector))
-           (root-node (vat-root-node vat-name)))
+    (let* ((vat-connector-id (vat-connector->id vat-connector))
+           (root-node (vat-root-node vat-connector-id)))
       (let loop ((t min-t)
                  (prev-node root-node)
                  (nodes (list root-node))
@@ -725,7 +724,7 @@ Display a tree view of events starting at TIMESTAMP in the current vat."
             ;; No event for this timestamp, make an empty node and
             ;; proceed to the next timestamp.
             (#f
-             (let* ((node (empty-node vat-name t))
+             (let* ((node (empty-node vat-connector-id t))
                     (edge (timeline-edge prev-node node)))
                (loop (+ t 1) node (cons node nodes) (cons edge edges))))
             ;; There is an event, generate a sub-graph for the churn,
@@ -743,9 +742,9 @@ Display a tree view of events starting at TIMESTAMP in the current vat."
          ;; sub-graph for the vat.
          (else
           (let* ((end-t (+ max-t 1))
-                 (end-node-name (msg-node-name vat-name end-t)))
-            (cons `(subgraph ,(format #f "cluster_vat_~a" vat-name)
-                             (attr graph (@ (label ,vat-name)
+                 (end-node-name (msg-node-name vat-connector-id end-t)))
+            (cons `(subgraph ,(format #f "cluster_vat_~a" vat-connector-id)
+                             (attr graph (@ (label ,(vat-connector 'name))
                                             (style "solid")
                                             (color "transparent")
                                             (fontsize "14")
