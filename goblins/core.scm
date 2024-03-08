@@ -2934,18 +2934,17 @@ Type: Actormap PersistenceEnv -> Void"
                [_ (error "Unknown depiction type" type)]))]
            [_ depicted]))
 
-      (actormap-run!
-       am
-       (lambda ()
-         (define restored-obj
-           (apply rehydrator version restored-args))
-         ($ resolver 'fulfill restored-obj))))
+      (let ((restored-obj (apply rehydrator version restored-args)))
+        ($ resolver 'fulfill restored-obj)))
 
     ;; Restore all the objects in the vows we have setup.
-    (hash-for-each
-     (lambda (slot portrait)
-       (restore-slot! slot (portrait-record-data portrait)))
-     portraits)
+    (actormap-churn-run!
+     am
+     (lambda ()
+       (hash-for-each
+	(lambda (slot portrait)
+	  (restore-slot! slot (portrait-record-data portrait)))
+	portraits)))
 
     (match roots
       [(? list? root-slots)

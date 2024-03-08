@@ -695,4 +695,40 @@
   (actormap-peek first-actormap astrid-greeter "Ludvig")
   "Salutations Ludvig, I am called *restored Astrid*, delighted to make your acquaintance! (called: 3)")
 
+;; Verify sending messages on construction work as expected.
+(define (^bar _bcom value)
+  (define (main-beh another-value)
+    (list value another-value))
+  (define (self-portrait)
+    (list value))
+  (portraitize main-beh self-portrait))
+
+(define (^foo _bcom bar value)
+  (define barred-value (<- bar value))
+  (define (main-beh)
+    barred-value)
+  (define (self-portrait)
+    (list bar value))
+  (portraitize main-beh self-portrait))
+
+(define env
+  (make-persistence-env
+   `((((tests test-core) ^bar) ,^bar)
+     (((tests test-core) ^foo) ,^foo))))
+
+(test-equal "Check restored actors can send messages upon construction"
+  '(start-bar start-foo)
+  (let*-values (((am1) (make-actormap))
+		((am2) (make-actormap))
+		((bar1) (actormap-spawn! am1 ^bar 'start-bar))
+		((foo1) (actormap-spawn! am1 ^foo bar1 'start-foo))
+		((portraits roots) (actormap-take-portrait am1 env foo1))
+		((foo2) (actormap-restore am2 env portraits roots)))
+    (actormap-peek
+     am2
+     (actormap-churn-run!
+      am2
+      (lambda ()
+	($ foo2))))))
+
 (test-end "test-goblins-core")
