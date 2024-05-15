@@ -1,6 +1,5 @@
-This is the documentation for the core Goblins API. That is, this is
-the documentation for everything imported with
-@code{(use-modules (goblins))}.
+This is the documentation for the core Goblins API, everything
+imported with @code{(use-modules (goblins))}.
 
 @menu
 * Objects::
@@ -163,11 +162,14 @@ use different but similar procedures.
 
 @deffn {Procedure} $ to-refr args @dots{}
 
-Call a @emph{near} object's behavior and return the result.
+If @var{to-refr} is a @emph{near} object, call it with @var{args}.  If
+it is a fulfilled promise, return the value.  If the promise resolved
+to a @emph{near} object, call that object with @var{args}.
 
 @itemize
 @item
-@var{to-refr}: @emph{Near} object to call.
+@var{to-refr}: @emph{Near} object to call or fulfilled promise with a
+value to extract.
 
 @item
 @var{args}: Arguments to the object's behavior.  If @var{to-refr}
