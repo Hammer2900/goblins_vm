@@ -1,5 +1,6 @@
 ;;; Copyright 2019-2021 Christine Lemmer-Webber
-;;; Copyright 2023 Juliana Sims
+;;; Copyright 2023, 2024 Juliana Sims
+;;; Copyright 2024 David Thompson
 ;;;
 ;;; Licensed under the Apache License, Version 2.0 (the "License");
 ;;; you may not use this file except in compliance with the License.
@@ -14,69 +15,78 @@
 ;;; limitations under the License.
 
 (define-module (goblins actor-lib methods)
-  #:use-module (ice-9 match)
-  #:use-module (srfi srfi-1)
-  #:use-module ((goblins core) #:renamer (lambda (x) (if (eq? x '$) '$C x)))
+  #:use-module ((goblins) #:select ($ live-refr?))
   #:export (methods extend-methods))
 
-(define-syntax expand-method-defn
-  (syntax-rules ()
-    ((_ ((method-name method-args ...) body ...))
-     (let ((method-name (lambda* (method-args ...) body ...)))
-       (cons 'method-name method-name)))
-    ((_ (method-name method-expr))
-     (cons 'method-name method-expr))))
+(define (no-such-method method)
+  ;; We curry like this so we can take advantage of case-lambda for making
+  ;; most common uses of methods highly performant.
+  (lambda args
+    (error "No such method" method args)))
 
-;; TODO: This is *not* a performant version of methods.  It's setting
-;; up an alist... that requires unnecessary list traveral.
-;; Instead we could make this more efficient by having an inlined set
-;; of tests, kind of like how a cond can expand into a set of nested
-;; `if' expressions.
-(define-syntax-rule (methods* fallback method-defn ...)
-  (let* ((all-methods (list (expand-method-defn method-defn) ...))
-         (this-fallback fallback)
-         (methods
-          (lambda (method . args)
-            (let ((found-method (assq-ref all-methods method)))
-              (if found-method
-                  (apply found-method args)
-                  (apply fallback method args))))))
-    methods))
-
-(define (no-such-method method . args)
-  (error "No such method" method args))
+(define-syntax-rule (methods* fallback ((name arg ...) body body* ...) ...)
+  (let ((lookup (lambda (method)
+                  (case method
+                    ((name) (lambda* (arg ...) body body* ...))
+                    ...
+                    (else (fallback method))))))
+    (case-lambda
+      (() (error "Method required"))
+      ;; Optimize 0-3 arg cases to avoid consing args list.
+      ((method) ((lookup method)))
+      ((method arg1) ((lookup method) arg1))
+      ((method arg1 arg2) ((lookup method) arg1 arg2))
+      ((method arg1 arg2 arg3) ((lookup method) arg1 arg2 arg3))
+      ;; Cons arg list for general case.
+      ((method . args) (apply (lookup method) args)))))
 
 (define-syntax-rule (methods method-defns ...)
-  ;;; Describe a collection of methods that an actor accepts.
-  ;;;
-  ;;; A Method-Defn has the form `((name args...) expr)' where 'NAME is the symbol
-  ;;; upon which the method dispatches, ARGS are the arguments it accepts, and
-  ;;; EXPR is the expression evaluated when the method is called.
-  ;;;
-  ;;; Type: (Method-Defn ...) -> Methods
+  ;; Describe an actor's methods.
+  ;;
+  ;; A Method-Defn has the form `((name args ...) expr)' where 'NAME is the
+  ;; symbol upon which the method dispatches, ARGS are the arguments it
+  ;; accepts, and EXPR is the expression evaluated when the method is called.
+  ;;
+  ;; Type: (Method-Defn ...) -> Methods
   (methods* no-such-method method-defns ...))
 
-(define (extend-actor extends-actor)
-  (lambda (method . args)
-    (apply $C extends-actor method args)))
-
 (define-syntax-rule (extend-methods extends method-defns ...)
-  ;;; Extend EXTENDS with METHOD-DEFNS.
-  ;;;
-  ;;; A METHOD-DEFN has the form `((name args...) expr)' where 'NAME is the symbol
-  ;;; upon which the method dispatches, ARGS are the arguments it accepts, and
-  ;;; EXPR is the expression evaluated when the method is called.
-  ;;;
-  ;;; Type: (U Actor Procedure) (Method-Defn ...) -> Methods
+  ;; Extend EXTENDS with METHOD-DEFNS.
+  ;;
+  ;; A METHOD-DEFN has the form `((name args...) expr)' where 'NAME is the symbol
+  ;; upon which the method dispatches, ARGS are the arguments it accepts, and
+  ;; EXPR is the expression evaluated when the method is called.
+  ;;
+  ;; Type: (U Actor Procedure) (Method-Defn ...) -> Methods
 
-  ;; We need to capture extended in a an outer let here otherwise
-  ;; it re-runs the extended code every time the procedure returned by
-  ;; methods is invoked
-  (let ((extended (match extends
-                    ;; we extend procedures as-is
-                    ((? procedure?) extends)
-                    ;; but wrap actors in procedure that calls them
-                    ((? live-refr?)
-                     (extend-actor extends))
-                    (#f no-such-method))))
-    (methods* extended method-defns ...)))
+  ;; We curry extends here so that we can use case-lambda and make the most
+  ;; common uses of methods performant while still supporting extension.
+  ;; We need to capture extendable in an outer let otherwise it re-runs the
+  ;; extendable code every time the procedure returned by methods is invoked.
+  (let ((extendable (cond
+                     ((procedure? extends)
+                      (lambda (method)
+                        extends))
+                     ((live-refr? extends)
+                      (lambda (method)
+                        (lambda args
+                          (apply $ extends method args))))
+                     (else no-such-method))))
+    (methods* extendable method-defns ...)))
+
+;; performance testing
+
+;; (define enum
+;;   (methods
+;;    ((average a b c)
+;;     (/ (+ a b c) 3))
+;;    ((foo) 1)
+;;    ((bar) 2)
+;;    ((baz) 3)
+;;    ((zort) 4)
+;;    ((narf) 5)
+;;    ((bloop) 6)))
+
+;; ((@ (statprof) statprof)
+;;  (lambda () (enum 'foo) (enum 'average 5 10 3))
+;;  #:loop 50000000)
