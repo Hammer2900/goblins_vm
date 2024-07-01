@@ -1,4 +1,4 @@
-;;; Copyright 2023 Jessica Tallon
+;;; Copyright 2023-2024 Jessica Tallon
 ;;;
 ;;; Licensed under the Apache License, Version 2.0 (the "License");
 ;;; you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@
   #:use-module (goblins ocapn netlayer tcp-tls)
   #:use-module (goblins actor-lib methods)
   #:use-module (goblins actor-lib joiners)
+  #:use-module (goblins actor-lib facet)
   #:use-module (fibers channels)
   #:use-module (ice-9 match)
   #:export (^prelay-admin
@@ -47,8 +48,7 @@ created on this prelay-admin."
       (bcom already-setup-beh
             (all-of
              (<- register 'register prelay-endpoint)
-             prelay-controller))))
-
+             (<- register 'register prelay-controller)))))
   (methods
    [(add-account name)
     (when (ghash-has-key? accounts name)
@@ -74,8 +74,8 @@ created on this prelay-admin."
   (define base-netlayer
     (or netlayer
         (match (ocapn-node-transport account-setup-node)
-          ('onion (new-onion-netlayer))
-          ('tcp-tls (new-tcp-tls-netlayer "localhost")))))
+          ('onion (spawn ^onion-netlayer))
+          ('tcp-tls (spawn ^tcp-tls-netlayer "localhost")))))
 
   ;; While most OCapN connections normally would expect connections to many
   ;; different nodes and support for handoffs between those, this situation is a
@@ -91,8 +91,9 @@ created on this prelay-admin."
     (<- base-mycapn 'enliven account-setup-sref))
   (on (<- account-setup-vow)
       (match-lambda
-        ((prelay-endpoint-sref prelay-controller) 
+        ((prelay-endpoint-sref prelay-controller-sref)
          (spawn ^prelay-netlayer
+                (spawn ^facet base-mycapn 'enliven)
                 prelay-endpoint-sref
-                prelay-controller)))
+                prelay-controller-sref)))
       #:promise? #t))
