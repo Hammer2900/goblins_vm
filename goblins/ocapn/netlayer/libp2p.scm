@@ -32,7 +32,7 @@
   #:use-module (goblins ocapn netlayer base-port)
   #:use-module (goblins contrib syrup)
   #:export (^libp2p-netlayer
-            ocapn-node->libp2p-multiaddr
+            ocapn-node->libp2p-multiaddrs
             libp2p-multiaddress->ocapn-node
             libp2p-env))
 
@@ -54,15 +54,30 @@
       `(multiaddr ,addr))
     multiaddrs)))
 
-(define (ocapn-node->libp2p-multiaddr node)
+(define (ocapn-node->libp2p-multiaddrs node)
   (unless (and (ocapn-node? node) (eq? (ocapn-node-transport node) 'libp2p))
-    (error "Can only convert libp2p OCapN node to libp2p mutliaddr"
+    (error "Can only convert libp2p OCapN node to libp2p mutliaddrs"
            node))
   (map
    (lambda (addr)
      (match addr
        [('multiaddr multiaddr) multiaddr]))
    (ocapn-node-hints node)))
+
+(define (libp2p-multiaddrs->libp2p-config multiaddrs)
+  "Take a list of libp2p multi-addresses and remove the peer ID (i.e. /p2p/<peer-id>) from them"
+  (map
+   (lambda (addr)
+     (let* ((p2p-index (string-contains addr "/p2p/"))
+            (ipfs-index (string-contains addr "/ipfs/"))
+            (index (or p2p-index ipfs-index)))
+       (format #f
+               "address:~a"
+               (if index
+                   (substring addr 0 index)
+                   addr))))
+   multiaddrs))
+
 
 (define (build-path . args)
   (string-join args file-name-separator-string))
@@ -74,7 +89,7 @@
   (build-path "/tmp" "goblins-libp2p"))
 
 (define* (setup-ocapn-io control-path path
-                         #:optional private-key)
+                         #:optional our-location private-key)
   ;; Set up the temporary directory and paths we'll be using for this
   ;; captp process
   (unless (file-exists? path)
@@ -112,11 +127,22 @@
 
   (define control-sock
     (spawn ^line-delimited-port (make-client-unix-domain-socket control-path)))
-  
-  (<-np control-sock 'write-line
-        (if private-key
-            (format #f "~a private-key:~a" base-message private-key)
-            base-message))
+
+  (define private-key-config
+    (if private-key
+        (format #f " private-key:~a" private-key)
+        ""))
+  (define multiaddr-config
+    (if our-location
+        (let* ((multiaddrs (ocapn-node->libp2p-multiaddrs our-location))
+               (address-config (libp2p-multiaddrs->libp2p-config multiaddrs)))
+          (string-join address-config))
+        ""))
+
+  (define config-message
+    (string-concatenate (list base-message private-key-config multiaddr-config)))
+
+  (<-np control-sock 'write-line config-message)
 
   (define (split-control-message message)
     (let* ((trimmed-message (string-trim message #\space))
@@ -152,7 +178,7 @@
 (define (setup-outgoing-sock sock location)
   (display
    (format #f "CONNECT ~a\n"
-           (string-join (ocapn-node->libp2p-multiaddr location) " "))
+           (string-join (ocapn-node->libp2p-multiaddrs location) " "))
    sock)
   (flush-output-port sock))
 
@@ -166,10 +192,6 @@
   #:portrait (lambda ()
                (list our-location private-key control-path path))
 
-  (pk 'init-control-sock init-control-sock
-      'init-incoming-connection-sock init-incoming-connection-sock
-      'init-outgoing-connection-path init-outgoing-connection-path)
-
   (define-values (_our-location _private-key
                                 control-sock
                                 incoming-connection-sock
@@ -178,7 +200,7 @@
         (values #f #f init-control-sock
                 init-incoming-connection-sock
                 init-outgoing-connection-path)
-        (setup-ocapn-io control-path path private-key)))
+        (setup-ocapn-io control-path path our-location private-key)))
 
   (define (incoming-accept)
     (on (<- incoming-connection-sock
