@@ -77,6 +77,7 @@
             actormap-replace-behavior
             actormap-replace-behavior!
             actormap-restore!
+            actormap-restore-with-far-refrs!
             actormap-restore-from-store!
             actormap-save-to-store!
 
@@ -545,15 +546,6 @@ Type: TransActormap -> Void"
   (and (actormap? am)
        (eq? (actormap-metatype am) transactormap-metatype)))
 
-(define (actormap-for-each proc am)
-  (match am
-    [(? whactormap?)
-     (hash-for-each proc (whactormap-data-wht (actormap-data am)))]
-    [(and (? transactormap?) (? transactormap-merged?))
-     (actormap-for-each (transactormap-data-parent am) proc)]
-    [_
-     (error "Cannot do actormap-for-each on non-merged transactormap.")]))
-
 (define (transactormap-buffer-merge! transactormap)
   "Merge TRANSACTORMAP against its parent buffer (also a
 transactormap).
@@ -574,8 +566,17 @@ Type: TransActormap -> Void"
   (merge-actormap-aurie-counters! parent transactormap)
   (set-transactormap-data-merged?! tm-data #t))
 
+(define (transactormap-for-each proc transactormap)
+  (define tm-data (actormap-data transactormap))
+  (define tm-delta
+    (transactormap-data-delta tm-data))
+  (if (transactormap-data-merged? tm-data)
+    (error "Can't use transactormap-for-each on merged transactormap")
+    (hash-for-each proc tm-delta)))
+
 (define transactormap-metatype
-  (make-actormap-metatype 'transactormap transactormap-ref transactormap-set!))
+  (make-actormap-metatype 'transactormap transactormap-ref transactormap-set!
+                          transactormap-for-each))
 
 (define (make-transactormap parent)
   "Create a return a reference to a transactional actormap
@@ -2828,13 +2829,8 @@ a transactormap which the user can choose whether or not to commit.
 
 Type: Actormap PersistenceEnv -> TransactorMap"
   (define metatype (actormap-metatype am))
-
-  ;; For now just deal with whactormaps (maybe always only do this?)
-  ;; TODO: Support all actormap types by adding actormap-fold / actormap-for-each
-  (unless (eq? (actormap-metatype-name metatype) 'whactormap)
-    (error "Provided actormap is not a whactormap."))
-  (define whactormap (actormap-data am))
-  (define whactormap-table (whactormap-data-wht whactormap))
+  (define actormap-for-each
+    (actormap-metatype-for-each-proc metatype))
   (define new-actormap (make-transactormap am))
 
   (define (has-new-beh? object-spec mactor)
@@ -2861,7 +2857,7 @@ Type: Actormap PersistenceEnv -> TransactorMap"
         (queue-messages! new-msgs)
         (transactormap-merge! new-am))))
 
-  (hash-for-each
+  (actormap-for-each
    (lambda (refr mactor)
      ;; Find the object spec for the given mactor (might not have one).
      (define object-spec
@@ -2909,7 +2905,7 @@ Type: Actormap PersistenceEnv -> TransactorMap"
 
          (dispatch-messages-for-am! new-am* (reverse new-msgs))
          (transactormap-merge! new-am*))))
-   whactormap-table)
+   am)
   new-actormap)
 
 (define (actormap-replace-behavior! am persistence-env)
@@ -2927,6 +2923,11 @@ Type: Actormap PersistenceEnv -> Void"
       (symbol? obj) (bytevector? obj)))
 
 (define (actormap-restore! am persistence-env portraits roots)
+  (define-values (_far-refrs root-objects)
+    (actormap-restore-with-far-refrs! am persistence-env portraits roots))
+  (apply values root-objects))
+
+(define (actormap-restore-with-far-refrs! am persistence-env portraits roots)
   "Restore a self portrait in an actormap"
   (define slots->resolvers
     (make-hash-table))
@@ -2959,11 +2960,23 @@ Type: Actormap PersistenceEnv -> Void"
       [(_persistence-name debug-name _portrait-version _portrait-data)
        debug-name]))
   
+  ;; We *need* to ensure we set the aurie-id counter on the actormap to the
+  ;; highest within the graph before creating any new local-object-refrs.
+  ;; Unfortunately that means having a pass over the graph just to calculate
+  ;; the highest aurie ID for the counter.
+  ;; TODO: Do we possibly want to serialize the counter so we don't need to do
+  ;; this? - not sure.
   (hash-for-each
    (lambda (slot depiction)
      (when (< highest-slot slot)
-       (set! highest-slot slot))
+       (set! highest-slot slot)))
+    portraits)
+  (set-actormap-aurie-counter! am highest-slot)
 
+  ;; Now loop through and make a refr for each object, we will point that refr
+  ;; at a vow and later change it to point directly at the refr.
+  (hash-for-each
+   (lambda (slot depiction)
      (let*-values (((vow resolver) (actormap-run! am spawn-promise-values))
                    ((vow-symlink) (make-mactor:local-link vow))
                    ((debug-name) (depiction->debug-name depiction))
@@ -3064,29 +3077,29 @@ Type: Actormap PersistenceEnv -> Void"
     ;; Install the mactor in the refr we created.
     (actormap-set! am refr (actormap-ref am restored-obj-refr)))
 
-    ;; Restore all the objects in the vows we have setup.
-    (hash-for-each
-     (lambda (slot portrait)
-       (restore-slot! slot portrait))
-     portraits)
+  ;; Restore all the objects in the vows we have setup.
+  (hash-for-each
+   (lambda (slot portrait)
+     (restore-slot! slot portrait))
+   portraits)
 
-    ;; When an actor is spawned it might send messages
-    ;; so keep track of those so we can dispatch them after.
-    (while (not (q-empty? msg-queue))
-      (let-values (((result new-am new-msgs)
-                    (actormap-turn-message am (deq! msg-queue))))
-        (transactormap-merge! new-am)
-        (enq-msgs! new-msgs)))
+  ;; When an actor is spawned it might send messages
+  ;; so keep track of those so we can dispatch them after.
+  (while (not (q-empty? msg-queue))
+    (let-values (((result new-am new-msgs)
+                  (actormap-turn-message am (deq! msg-queue))))
+      (transactormap-merge! new-am)
+      (enq-msgs! new-msgs)))
 
-    (match roots
-      [(? list? root-slots)
-       (define restored-roots
-         (map (lambda (slot)
-                (hashq-ref slots->refrs slot))
-              root-slots))
-       (apply values far-refr-resolvers restored-roots)]
-       [(? integer? slot)
-        (values far-refr-resolvers (hashq-ref slots->refrs slot))]))
+  (match roots
+    [(? list? root-slots)
+     (define restored-roots
+       (map (lambda (slot)
+              (hashq-ref slots->refrs slot))
+            root-slots))
+     (values far-refr-resolvers restored-roots)]
+    [(? integer? slot)
+     (values far-refr-resolvers (list (hashq-ref slots->refrs slot)))]))
 
 (define (actormap-restore-from-store! am env store)
   "Reads portrait graph from STORE and restores into provided AM.
