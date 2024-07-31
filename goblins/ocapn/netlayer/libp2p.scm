@@ -130,7 +130,7 @@
 
   (define private-key-config
     (if private-key
-        (format #f " private-key:~a" private-key)
+        (format #f " private-key:~a " private-key)
         ""))
   (define multiaddr-config
     (if our-location
