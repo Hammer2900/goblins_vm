@@ -205,7 +205,7 @@
   (define (incoming-accept)
     (on (<- incoming-connection-sock
             (lambda (port)
-              (accept port)))
+              (accept port O_NONBLOCK)))
         (match-lambda
           ((client . addr)
            (setvbuf client 'block 1024)
