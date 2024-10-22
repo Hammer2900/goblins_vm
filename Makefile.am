@@ -81,6 +81,7 @@ SOURCES = goblins.scm \
           goblins/ocapn/ids.scm \
           goblins/ocapn/netlayer/base-port.scm \
           goblins/ocapn/netlayer/fake.scm \
+          goblins/ocapn/netlayer/insecure-websocket.scm \
           goblins/ocapn/netlayer/onion-socks.scm \
           goblins/ocapn/netlayer/onion.scm \
           goblins/ocapn/netlayer/libp2p.scm \
@@ -129,6 +130,7 @@ TESTS = tests/actor-lib/test-cell.scm \
         tests/test-migrations.scm \
         tests/ocapn/test-captp.scm \
         tests/ocapn/netlayer/test-fake.scm \
+        tests/ocapn/netlayer/test-insecure-websocket.scm \
         tests/ocapn/netlayer/test-libp2p.scm \
         tests/ocapn/netlayer/test-prelay.scm \
         tests/ocapn/netlayer/test-prelay-utils.scm \
