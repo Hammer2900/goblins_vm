@@ -19,6 +19,8 @@
   #:use-module (goblins)
   #:use-module (goblins ocapn ids)
   #:use-module (goblins ocapn netlayer base-port)
+  #:use-module ((goblins ocapn netlayer utils)
+                #:select (use-nonblocking-i/o))
   #:use-module (goblins actor-lib cell)
   #:use-module (goblins actor-lib io)
   #:use-module (goblins utils crypto)
@@ -32,9 +34,6 @@
             generate-tls-certificate
             ^tcp-tls-netlayer
             tcp-tls-netlayer-env))
-
-(define (use-nonblocking-i/o port)
-  (fcntl port F_SETFL (logior O_NONBLOCK (fcntl port F_GETFL))))
 
 (define (make-server-socket+port port max-connections)
   (let ((sock (socket AF_INET SOCK_STREAM IPPROTO_TCP)))

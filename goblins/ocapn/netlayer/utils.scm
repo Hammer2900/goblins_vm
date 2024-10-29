@@ -29,12 +29,17 @@
   #:use-module (goblins actor-lib joiners)
   #:use-module (goblins actor-lib io)
   #:use-module (goblins utils random-name)
-  #:export (^captp-io
+  #:export (use-nonblocking-i/o
+            ^captp-io
             random-tmp-filename
             make-server-unix-domain-socket
             make-client-unix-domain-socket
             ^unix-socket
             ^line-delimited-port))
+
+(define (use-nonblocking-i/o port)
+  (fcntl port F_SETFL
+         (logior O_NONBLOCK (fcntl port F_GETFL))))
 
 (define (^captp-io _bcom port)
   (define io
