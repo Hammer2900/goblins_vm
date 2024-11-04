@@ -16,19 +16,20 @@
   #:use-module (fibers io-wakeup)
   #:use-module (fibers operations)
   #:use-module (fibers timers)
-  #:use-module ((gcrypt base64)
-                #:select (base64-encode))
-  #:use-module ((gcrypt random)
-                #:select (gen-random-bv))
   #:use-module ((goblins core) #:renamer (lambda (x) (if (eq? x '$) '$C x)))
   #:use-module (goblins define-actor)
   #:use-module (goblins actor-lib io)
   #:use-module (goblins actor-lib methods)
+  #:use-module (goblins contrib base64)
   #:use-module (goblins contrib syrup)
   #:use-module (goblins ocapn ids)
   #:use-module ((goblins ocapn netlayer utils)
                 #:select (use-nonblocking-i/o))
+  #:use-module (goblins utils base32)
+  #:use-module (goblins utils crypto)
   #:use-module (ice-9 match)
+  #:use-module ((scheme base)
+                #:select (bytevector-copy))
   #:use-module (web client)
   #:use-module (web request)
   #:use-module (web response)
@@ -114,16 +115,17 @@ KEY."
                            (() #f)
                            ((host) host))
                          #:port
-                         (or (match (assq-ref (ocapn-node-hints node) 'port)
-                               (() #f)
-                               ((port) port))
+                         (or (string->number
+                              (match (assq-ref (ocapn-node-hints node) 'port)
+                                (() #f)
+                                ((port) port)))
                              80)))
          (sock (if (websocket-uri? uri)
                    (open-socket-for-uri (websocket-uri->http-uri uri) #:verify-certificate? #f)
                    (error "not a valid WebSocket URI" uri node))))
     (setsockopt sock SOL_SOCKET SO_REUSEADDR 1)
     (use-nonblocking-i/o sock)
-    (let ((key (base64-encode (gen-random-bv 16))))
+    (let ((key (base64-encode (bytevector-copy (strong-random-bytes 16) 0 16))))
       (write-request (make-handshake-request uri key) sock)
       (force-output sock)
       (let* ((response (read-response sock))
@@ -231,13 +233,17 @@ Type: Actor WebSocket WebSocket -> Actor"
   "Unencrypted WebSocket netlayer actor"
   (define our-location
     (make-ocapn-node 'websocket
-                     (format #f "~a:~a" host port)
+                     ;; XXX: url-base64-encode uses _ which is not valid for
+                     ;; hostnames.  if this errors, just try again
+                     ;; TODO: use base32 (not in Hoot atm)
+                     (base32-encode (strong-random-bytes #f))
                      `((host ,host)
-                       (port ,port)
+                       (port ,(number->string port))
                        ;; See sections 3, 4.1
                        (resource-name "/")
-                       (secure? ,secure?)
-                       (protocol syrup))))
+                       ;;(secure? ,secure?)
+                       ;;(protocol syrup)
+                       )))
 
   ;; Make promises so we can asynchronously pass references to the
   ;; connection-establisher
