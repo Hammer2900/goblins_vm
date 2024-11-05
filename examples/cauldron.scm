@@ -246,8 +246,8 @@
     (lambda () #f)
     (lambda ()
       (define running? #t)
-      (while running?
-        ; (pk 'loop)
+      (do ((running? #t))
+          ((not running?))
         ;; a really bad game loop
         (match (poll-for-input)
           ;; no input, which means it's time for an update

@@ -47,7 +47,8 @@
     (error "Inbox is closed"))
 
   (define (stop-beh)
-    (while (not ($ pending 'empty?))
+    (do ()
+        (($ pending 'empty?))
       (let ((waiting-resolver ($ pending 'dequeue)))
         ($ waiting-resolver 'break 'inbox-closed)))
     (bcom (^inbox bcom read-warden write-warden stop-warden #f #f #t)))

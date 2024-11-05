@@ -53,7 +53,8 @@
     (define (stop-op)
       (wrap-operation (wait-operation stop?)
                       (lambda () (set! keep-going? #f))))
-    (while keep-going?
+    (do ()
+        ((not keep-going?))
       (perform-operation
        (if next-one
            (choice-operation (deq-op) (enq-op) (stop-op))

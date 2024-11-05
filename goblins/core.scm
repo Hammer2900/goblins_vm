@@ -2829,7 +2829,8 @@ Type: Actormap Procedure Procedure LiveRef ... -> Hashmap List"
   (for-each maybe-enqueue roots)
 
   ;; Go through the queue of objects to read and process them.
-  (while (not (q-empty? process-queue))
+  (do ()
+      ((q-empty? process-queue))
     (let*-values ([(obj) (deq! process-queue)]
                   [(slot obj-self-portrait new-child-objs) (read-portrait! am obj)])
       (hashq-set! slot->portrait slot obj-self-portrait)
@@ -2884,7 +2885,8 @@ Type: Actormap PersistenceEnv -> TransactorMap"
          (enq! msg-queue msg))
        msgs))
     (queue-messages! messages)
-    (while (not (q-empty? msg-queue))
+    (do ()
+        ((q-empty? msg-queue))
       (let-values (((_val new-am new-msgs)
                     (actormap-turn-message am (deq! msg-queue))))
         (queue-messages! new-msgs)
@@ -3116,7 +3118,8 @@ Type: Actormap PersistenceEnv -> Void"
 
   ;; When an actor is spawned it might send messages
   ;; so keep track of those so we can dispatch them after.
-  (while (not (q-empty? msg-queue))
+  (do ()
+      ((q-empty? msg-queue))
     (let-values (((result new-am new-msgs)
                   (actormap-turn-message am (deq! msg-queue))))
       (transactormap-merge! new-am)
