@@ -16,7 +16,8 @@
   #:use-module (fibers io-wakeup)
   #:use-module (fibers operations)
   #:use-module (fibers timers)
-  #:use-module ((goblins core) #:renamer (lambda (x) (if (eq? x '$) '$C x)))
+  #:use-module ((goblins core) #:hide ($))
+  #:use-module ((goblins core) #:select ($) #:prefix $)
   #:use-module (goblins define-actor)
   #:use-module (goblins actor-lib io)
   #:use-module (goblins actor-lib methods)
@@ -30,13 +31,15 @@
   #:use-module (ice-9 match)
   #:use-module ((scheme base)
                 #:select (bytevector-copy))
+  #:use-module (srfi srfi-11)
   #:use-module (web client)
   #:use-module (web request)
   #:use-module (web response)
   #:use-module (web uri)
   #:use-module (web socket frame)
   #:use-module (web socket utils)
-  #:export (^insecure-websocket-netlayer
+  #:export (^insecure-websocket-server-netlayer
+            ^insecure-websocket-client-netlayer
             insecure-websocket-netlayer-env))
 
 (define (^websocket-server-io _bcom host port)
@@ -55,7 +58,6 @@
   "Perform the server-side handshake for a WebSocket connection over
 @var{client-socket}"
   (define (make-handshake-response key)
-    ;; Server-side
     "Return an HTTP response object for upgrading to a WebSocket
 connection for the client whose key is CLIENT-KEY, a base64 encoded
 string."
@@ -76,72 +78,82 @@ string."
         client-socket))
     #:unwind? #t))
 
-(define (node->client-socket node)
-  "Create a port and perform the client-side handshake of a WebSocket connection
-with @var{node}"
-
-  (define (make-handshake-request uri key)
-    "Create an HTTP request for initiating a WebSocket connection with
+(define (make-handshake-request uri key)
+  "Create an HTTP request for initiating a WebSocket connection with
 the remote resource described by URI, using a randomly generated nonce
 KEY."
-    (let ((headers `((host . (,(uri-host uri) . #f))
-                     (upgrade . ("WebSocket"))
-                     (connection . (upgrade))
-                     (sec-websocket-key . ,key)
-                     (sec-websocket-version . "13"))))
-      (build-request uri #:method 'GET #:headers headers)))
+  (let ((headers `((host . (,(uri-host uri) . #f))
+                   (upgrade . ("WebSocket"))
+                   (connection . (upgrade))
+                   (sec-websocket-key . ,key)
+                   (sec-websocket-version . "13"))))
+    (build-request uri #:method 'GET #:headers headers)))
 
-  (define (websocket-uri? uri)
-    "Return #t if URI is a valid WebSocket URI."
-    (and (or (eq? (uri-scheme uri) 'ws)
-             (eq? (uri-scheme uri) 'wss))
-         (not (uri-fragment uri))))
+(define (websocket-uri? uri)
+  "Return #t if URI is a valid WebSocket URI."
+  (and (or (eq? (uri-scheme uri) 'ws)
+           (eq? (uri-scheme uri) 'wss))
+       (not (uri-fragment uri))))
 
-  (define (websocket-uri->http-uri uri)
-    (build-uri (match (uri-scheme uri)
-                 ('wss 'https)
-                 ('ws 'http))
-               #:userinfo (uri-userinfo uri)
-               #:host (uri-host uri)
-               #:port (uri-port uri)
-               #:path (uri-path uri)
-               #:query (uri-query uri)
-               #:fragment (uri-fragment uri)
-               #:validate? #t))
+(define (websocket-uri->http-uri uri)
+  (build-uri (match (uri-scheme uri)
+               ('wss 'https)
+               ('ws 'http))
+             #:userinfo (uri-userinfo uri)
+             #:host (uri-host uri)
+             #:port (uri-port uri)
+             #:path (uri-path uri)
+             #:query (uri-query uri)
+             #:fragment (uri-fragment uri)
+             #:validate? #t))
 
-  (let* ((uri (build-uri 'ws
-                         #:host
-                         (match (assq-ref (ocapn-node-hints node) 'host)
-                           (() #f)
-                           ((host) host))
-                         #:port
-                         (or (string->number
-                              (match (assq-ref (ocapn-node-hints node) 'port)
-                                (() #f)
-                                ((port) port)))
-                             80)))
-         (sock (if (websocket-uri? uri)
-                   (open-socket-for-uri (websocket-uri->http-uri uri) #:verify-certificate? #f)
-                   (error "not a valid WebSocket URI" uri node))))
-    (setsockopt sock SOL_SOCKET SO_REUSEADDR 1)
-    (use-nonblocking-i/o sock)
-    (let ((key (base64-encode (bytevector-copy (strong-random-bytes 16) 0 16))))
-      (write-request (make-handshake-request uri key) sock)
-      (force-output sock)
-      (let* ((response (read-response sock))
-             (headers (response-headers response))
-             (upgrade (assoc-ref headers 'upgrade))
-             (connection (assoc-ref headers 'connection))
-             (accept (assoc-ref headers 'sec-websocket-accept)))
-        ;; Validate the handshake.
-        (if (and (= (response-code response) 101)
-                 (string-ci=? (car upgrade) "websocket")
-                 (equal? connection '(upgrade))
-                 (string=? (string-trim-both accept) (make-accept-key key)))
-            sock
-            (begin
-              (close-port sock)
-              (error "websocket handshake failed" node)))))))
+(define (websocket-client-handshake node)
+  "Create a port and perform the client-side handshake of a WebSocket connection
+with @var{node}"
+  (cond-expand
+   (guile
+    (let* ((uri (build-uri 'ws
+                           #:host
+                           (match (assq-ref (ocapn-node-hints node) 'host)
+                             (() #f)
+                             ((host) host))
+                           #:port
+                           (or (string->number
+                                (match (assq-ref (ocapn-node-hints node) 'port)
+                                  (() #f)
+                                  ((port) port)))
+                               80)))
+           (sock (if (websocket-uri? uri)
+                     (open-socket-for-uri (websocket-uri->http-uri uri)
+                                          #:verify-certificate? #f)
+                     (error "not a valid WebSocket URI" uri node))))
+      (setsockopt sock SOL_SOCKET SO_REUSEADDR 1)
+      (use-nonblocking-i/o sock)
+      (let ((key (base64-encode (bytevector-copy (strong-random-bytes 16) 0 16))))
+        (write-request (make-handshake-request uri key) sock)
+        (force-output sock)
+        (let* ((response (read-response sock))
+               (headers (response-headers response))
+               (upgrade (assoc-ref headers 'upgrade))
+               (connection (assoc-ref headers 'connection))
+               (accept (assoc-ref headers 'sec-websocket-accept)))
+          ;; Validate the handshake.
+          (if (and (= (response-code response) 101)
+                   (string-ci=? (car upgrade) "websocket")
+                   (equal? connection '(upgrade))
+                   (string=? (string-trim-both accept) (make-accept-key key)))
+              sock
+              (begin
+                (close-port sock)
+                (error "websocket handshake failed" node)))))))
+   (hoot
+    (make-websocket
+     (string-append "ws://"
+                    (car (assq-ref (ocapn-node-hints remote-obj)
+                                   'host))
+                    ":"
+                    (car (assq-ref (ocapn-node-hints remote-obj)
+                                   'port)))))))
 
 (define (fibers-read-data-frame port)
   ;; This loop is adapted from guile-websocket's
@@ -201,73 +213,122 @@ KEY."
       (close-port port)
       #f))))
 
-(define* (^websocket-captp-io _bcom sock #:optional (close-handler values))
+(define* (^websocket-captp-io _bcom sock)
   "Construct an actor wrapping a WebSocket connection in a Goblins-friendly way
 
-Type: Actor WebSocket WebSocket -> Actor"
-  (define message-io (spawn ^read-write-io sock #:cleanup close-port))
+Type: (U OcapnNode WebSocket) -> Actor"
+  (cond-expand
+   (guile
+    (let ((message-io (spawn ^read-write-io sock #:cleanup close-port)))
+      (methods
+       ((read-message unmarshallers)
+        (<- message-io 'read
+            (lambda (port)
+              ;; FIXME: this will likely error either way,
+              ;; but at least this is something
+              (if (eof-object? (peek-char port))
+                  (begin
+                    (format (current-error-port)
+                            "~%insecure-websocket-netlayer: EOF received; halting~%")
+                    (<-np-extern message-io 'halt)
+                    the-eof-object)
+                  (match (fibers-read-data-frame port)
+                    ((or #f (? close-frame?))
+                     (<-np-extern message-io 'halt)
+                     the-eof-object)
+                    (message
+                     (syrup-decode (frame-data message)
+                                   #:unmarshallers unmarshallers)))))))
+       ((write-message msg marshallers)
+        (<-np message-io 'write
+              (lambda (resource)
+                (write-frame
+                 (make-binary-frame
+                  (syrup-encode msg #:marshallers marshallers))
+                 resource)))))))
 
-  (methods
-   ((read-message unmarshallers)
-    (<- message-io 'read
-        (lambda (port)
-          (match (fibers-read-data-frame port)
-            ((or #f (? close-frame?))
-             (<-np message-io 'halt)
-             (close-handler))
-            (message
-             (syrup-decode (frame-data message)
-                           #:unmarshallers unmarshallers))))))
-   ((write-message msg marshallers)
-    (<-np message-io 'write
-          (lambda (resource)
-            (write-frame
-             (make-binary-frame
-              (syrup-encode msg #:marshallers marshallers))
-             resource))))))
+   (hoot
+    (let-values (((incoming-ch)
+                  (make-channel))
+                 ((opened-vow opened-resolver)
+                  (spawn-promise-values)))
+      (websocket-on-open sock (lambda (event)
+                                (<-np-extern opened-resolver 'fulfill sock)))
+      (websocket-on-message sock
+                            (lambda (message-event)
+                              (put-message incoming-ch
+                                           (message-event-data message-event))))
+      (methods
+       ((read-message unmarshallers)
+        (syrup-decode (get-message incoming-ch)
+                      #:unmarshallers unmarshallers))
+       ((write-message msg marshallers)
+        (on opened-vow
+            (lambda (ws)
+              (websocket-send ws
+                              (syrup-encode msg #:marshallers marshallers))))))))))
 
-(define-actor (^insecure-websocket-netlayer _bcom #:key
-                                            (host "127.0.0.1")
-                                            (port 8888)
-                                            (secure? #f))
+(define netlayer-count
+  (let ((count 0))
+    (lambda ()
+      (let ((cnt count))
+        (set! count (1+ count))
+        cnt))))
+
+(define-actor (^insecure-websocket-server-netlayer bcom #:key
+                                                   (host "127.0.0.1")
+                                                   (port 8888))
+  (cond-expand
+   (guile
+    (^insecure-websocket-base-netlayer
+     bcom
+     (make-ocapn-node 'insecure-websocket
+                      (base32-encode (strong-random-bytes 15))
+                      `((host ,host)
+                        (port ,(number->string port))))
+     ;; XXX: this is atrocious but cond-expand complains about `define'
+     (let ((incoming-io
+            ;; Setup our WebSocket server and wrap it in an IO actor
+            (spawn ^websocket-server-io host port)))
+       (lambda (conn-establisher)
+         (let lp ()
+           (on (<- incoming-io (lambda (sock)
+                                 (match (accept sock SOCK_NONBLOCK)
+                                   ((client-socket . _)
+                                    (websocket-server-handshake client-socket)))))
+               (lambda (client-socket)
+                 (<-np conn-establisher
+                       (spawn ^websocket-captp-io client-socket)
+                       #f))
+               #:finally
+               (lambda () (lp))))))))
+
+   (hoot
+    (error "Browser APIs do not support WebSocket servers"))))
+
+(define-actor (^insecure-websocket-client-netlayer bcom)
+  (^insecure-websocket-base-netlayer
+   bcom
+   (make-ocapn-node 'insecure-websocket
+                    (base32-encode (strong-random-bytes 15))
+                    `((host "anonymous-client-websocket")))
+   (lambda (_) #t)))
+
+(define-actor (^insecure-websocket-base-netlayer _bcom
+                                                 our-location
+                                                 start-connection)
   "Unencrypted WebSocket netlayer actor"
-  (define our-location
-    (make-ocapn-node 'websocket
-                     ;; XXX: url-base64-encode uses _ which is not valid for
-                     ;; hostnames.  if this errors, just try again
-                     ;; TODO: use base32 (not in Hoot atm)
-                     (base32-encode (strong-random-bytes #f))
-                     `((host ,host)
-                       (port ,(number->string port))
-                       ;; See sections 3, 4.1
-                       (resource-name "/")
-                       ;;(secure? ,secure?)
-                       ;;(protocol syrup)
-                       )))
+
+  (define name (string->symbol
+                (format #f "insecure-websocket-~a" (netlayer-count))))
 
   ;; Make promises so we can asynchronously pass references to the
   ;; connection-establisher
   (define-values (conn-establisher-vow conn-establisher-resolver)
     (spawn-promise-values))
 
-  ;; Setup our WebSocket server and wrap it in an IO actor
-  (define incoming-io (spawn ^websocket-server-io host port))
-
-  (define (start-connection conn-establisher)
-    (on (<- incoming-io (lambda (sock)
-                          (match (accept sock SOCK_NONBLOCK)
-                            ((client-socket . _)
-                             (websocket-server-handshake client-socket)))))
-        (lambda (client-socket)
-          (<-np conn-establisher
-                (spawn ^websocket-captp-io client-socket)
-                #f))
-        #:finally
-        (lambda ()
-          (start-connection conn-establisher))))
-
   (methods
-   ((netlayer-name) 'websocket)
+   ((netlayer-name) 'insecure-websocket)
    ((self-location? loc)
     (same-node-location? our-location loc))
    ((our-location) our-location)
@@ -282,8 +343,9 @@ Type: Actor WebSocket WebSocket -> Actor"
    ((connect-to remote-node)
     (match remote-node
       ;; remote-node is a WebSocket node
-      (($ <ocapn-node> 'websocket _ _)
-       (on (<- (spawn ^io remote-node) node->client-socket)
+      (($ <ocapn-node> 'insecure-websocket _ _)
+       ;; XXX: this is a hack but i don't remember what it's a hack for...
+       (on (<- (spawn ^io remote-node) websocket-client-handshake)
            (lambda (client-socket)
              (<- conn-establisher-vow
                  (spawn ^websocket-captp-io client-socket)
@@ -291,9 +353,11 @@ Type: Actor WebSocket WebSocket -> Actor"
            #:promise? #t))
       ;; remote-node is not a WebSocket node
       (($ <ocapn-node> transport _ _)
-       (error "Mismatched netlayer" transport 'websocket))))))
+       (error "Mismatched netlayer" transport 'insecure-websocket))))))
 
 (define insecure-websocket-netlayer-env
   (make-persistence-env
-   `((((goblins ocapn netlayer insecure-websocket) ^insecure-websocket-netlayer)
-      ,^insecure-websocket-netlayer))))
+   `((((goblins ocapn netlayer insecure-websocket) ^insecure-websocket-server-netlayer)
+      ,^insecure-websocket-server-netlayer)
+     (((goblins ocapn netlayer insecure-websocket) ^insecure-websocket-client-netlayer)
+      ,^insecure-websocket-client-netlayer))))

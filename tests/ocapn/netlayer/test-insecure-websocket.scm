@@ -8,60 +8,41 @@
 
 (test-begin "test-insecure-websocket-netlayer")
 
-(define a-vat (spawn-vat #:name "a-vat"))
-(define b-vat (spawn-vat #:name "b-vat"))
+(define client-vat (spawn-vat #:name "client-vat"))
+(define server-vat (spawn-vat #:name "server-vat"))
 
-(define a-netlayer
-  (with-vat a-vat
-    (spawn ^insecure-websocket-netlayer
-           #:port 9999)))
-(define b-netlayer
-  (with-vat b-vat
-    (spawn ^insecure-websocket-netlayer
-           #:port 8888)))
+(define client-netlayer
+  (with-vat client-vat
+    (spawn ^insecure-websocket-client-netlayer)))
+(define server-netlayer
+  (with-vat server-vat
+    (spawn ^insecure-websocket-server-netlayer)))
 
-(define a-mycapn
-  (with-vat a-vat (spawn-mycapn a-netlayer)))
-(define b-mycapn
-  (with-vat b-vat (spawn-mycapn b-netlayer)))
+(define client-mycapn
+  (with-vat client-vat (spawn-mycapn client-netlayer)))
+(define server-mycapn
+  (with-vat server-vat (spawn-mycapn server-netlayer)))
 
 (define (^greeter _bcom my-name)
   (lambda (your-name)
     (format #f "Hello ~a, my name is ~a!" your-name my-name)))
 
-(define alice
-  (with-vat a-vat
-    (spawn ^greeter "Alice")))
 (define bob
-  (with-vat b-vat
+  (with-vat server-vat
     (spawn ^greeter "Bob")))
 
-(define alice-locator-sref
-  (with-vat a-vat
-    ($ a-mycapn 'register alice 'websocket)))
 (define bob-locator-sref
-  (with-vat b-vat
-    ($ b-mycapn 'register bob 'websocket)))
+  (with-vat server-vat
+    ($ server-mycapn 'register bob 'insecure-websocket)))
 
 (let ((result
        (resolve-vow-and-return-result
-        a-vat
+        client-vat
         (lambda ()
-          (define bob-vow (<- a-mycapn 'enliven bob-locator-sref))
-          (<- bob-vow "Arthur")))))
-  (test-equal "Enliven far sturdyref and use it from a->b"
-    #(ok "Hello Arthur, my name is Bob!")
-    result))
-
-(let ((result
-       (resolve-vow-and-return-result
-        b-vat
-        (lambda ()
-          (define alice-vow (<- b-mycapn 'enliven alice-locator-sref))
-          (<- alice-vow "Bun")))))
-  (test-equal "Enliven far sturdyref and use it from b->a"
-    #(ok "Hello Bun, my name is Alice!")
+          (define bob-vow (<- client-mycapn 'enliven bob-locator-sref))
+          (<- bob-vow "Alice")))))
+  (test-equal "Enliven far sturdyref and use it from client->server"
+    #(ok "Hello Alice, my name is Bob!")
     result))
 
 (test-end)
-
