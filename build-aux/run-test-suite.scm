@@ -76,7 +76,24 @@
       (format port "<?xml version=\"1.0\" encoding=\"UTF-8\" ?>\n")
       (sxml->xml combined-xml port))))
 
+(define (hoot-flag? str)
+  (string=? str "--hoot"))
+
 (match (command-line)
+  [(_ (? hoot-flag?) tests ...)
+   ;; TODO: proper Hoot test driver with a custom test-runner object etc
+   (for-each
+    (lambda (test-name)
+      ;; FIXME: we'd really prefer to only compile reused components once
+      (system* "guild" "compile-wasm"
+               "--run=node" "--async"
+               "--user-imports=hoot-ffi/crypto.js"
+               ;; FIXME: we ideally shouldn't be using relative paths
+               "-L" "../guile/module"
+               "-L" "hoot-modules"
+               "-L" "."
+               test-name))
+    tests)]
   [(_ tests ...)
    (par-for-each
     (lambda (test-name)
@@ -92,7 +109,7 @@
                  "guile"
                  "-L" "."
                  test-name)))
-      tests)
+    tests)
 
    ;; Now build the combined junit file.
    (let* ((xml-files (map (lambda (filename) (replace-file-extension filename ".xml")) tests))

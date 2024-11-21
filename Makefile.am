@@ -147,6 +147,9 @@ TESTS = tests/actor-lib/test-cell.scm \
         tests/utils/test-crypto.scm \
         tests/contrib/test-syrup.scm
 
+# TODO: this but properly
+HOOT_TESTS = $(filter-out %repl.scm, $(filter-out %netlayer%, $(TESTS)))
+
 TEST_EXTENSIONS = .scm
 SCM_LOG_DRIVER =                                \
   $(top_builddir)/pre-inst-env                  \
@@ -174,6 +177,11 @@ dist_infoimage_DATA = doc/images/questie-lamport-diagram.png
 dvi: # Don't build dvi docs
 html-local:
 	$(GUILE) --no-auto-compile doc/build-html.scm
+
+check-hoot:
+	$(top_builddir)/pre-inst-env \
+		$(GUILE) --no-auto-compile -L "$(top_srcdir)" \
+			build-aux/run-test-suite.scm --hoot $(HOOT_TESTS)
 
 run-tests:
 	$(top_builddir)/pre-inst-env \
