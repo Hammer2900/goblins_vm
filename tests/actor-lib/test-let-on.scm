@@ -61,4 +61,30 @@
                (eight (<- doubler four)))
        (+ four eight)))))
 
+(define (^symbol->boolean _bcom)
+  (lambda (type)
+    (not (eq? type 'false))))
+
+(define booleanator
+  (with-vat a-vat
+    (spawn ^symbol->boolean)))
+
+(test-equal "if-on evaluates a boolean and branches on it"
+  #(ok "It's true :D")
+  (resolve-vow-and-return-result
+   a-vat
+   (lambda ()
+     (if-on (<- booleanator 'true)
+            "It's true :D"
+            "It's false :("))))
+
+(test-equal "match-on evaluates a promise and matches on it"
+  #(ok "It worked!")
+  (resolve-vow-and-return-result
+   a-vat
+   (lambda ()
+     (match-on (<- doubler 2)
+       (2 "Uh-oh, that's not right!")
+       (4 "It worked!")))))
+
 (test-end "test-let-on")

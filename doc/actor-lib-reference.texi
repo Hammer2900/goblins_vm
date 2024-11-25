@@ -620,6 +620,69 @@ So this use of @code{let*-on}@dots{}
 
 @end deffn
 
+@deffn {Syntax} if-on test consequence [alternate]
+
+Syntax sugar composing the resolution of a promise returning a boolean
+value with an @code{if} statement branching on that boolean value.
+
+A statement like@dots{}
+
+@lisp
+(if-on (<- lie-detector 'is-true? "This statement is false.")
+       "Wow, I guess that statement really was false!"
+       "Woah, that was a big ol' lie!")
+@end lisp
+
+@dots{}is equivalent to@dots{}
+
+@lisp
+(on (<- lie-detector 'is-true? "This statement is false.")
+    (lambda (true?)
+      (if true?
+          "Wow, I guess that statement really was false!"
+          "Woah, that was a big ol' lie!"))
+    #:promise? #t)
+@end lisp
+
+@end deffn
+
+@deffn {Syntax} if-on-np test consequence [alternate]
+
+Like @code{if-on}, but doesn't return a promise.
+
+@end deffn
+
+@deffn {Syntax} match-on promise clause1 clause2 ...
+
+Syntax sugar composing the resolution of a promise with matching on
+its result.
+
+A statement like@dots{}
+
+@lisp
+(match-lambda (<- doubler 2)
+  (2 "Uh-oh, that's not right!")
+  (4 "It worked!"))
+@end lisp
+
+@dots{}is equivalent to@dots{}
+
+@lisp
+(on (<- doubler 2)
+    (match-lambda
+      (2 "Uh-oh, that's not right!")
+      (4 "It worked!"))
+    #:promise? #t)
+@end lisp
+
+@end deffn
+
+@deffn {Syntax} match-on-np promise clause1 clause2 ...
+
+Like @code{match-on}, but doesn't return a promise.
+
+@end deffn
+
 @node Methods
 @section Methods
 

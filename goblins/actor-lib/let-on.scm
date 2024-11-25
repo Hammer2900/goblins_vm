@@ -18,8 +18,12 @@
   #:use-module (goblins actor-lib joiners)
   #:use-module (goblins core)
   #:use-module (ice-9 match)
-  #:export (let-on
-            let*-on))
+  #:export (if-on
+            if-on-np
+            let-on
+            let*-on
+            match-on
+            match-on-np))
 
 (define-syntax let-on
   ;;; Concurrently evaluate and resolve each EXP, binding it to VAR
@@ -47,3 +51,63 @@
          (lambda (var)
            (let*-on rest body ...))
          #:promise? #t))))
+
+(define-syntax if-on
+  ;; Syntax sugar to combine @code{on} and @code{if}
+  ;;
+  ;; Type: Promise Expression Expression -> Promise
+  (syntax-rules ()
+    ((_ test consequence)
+     (on test
+         (lambda (true?)
+           (if true?
+               consequence))
+         #:promise? #t))
+    ((_ test consequence alternate)
+     (on test
+         (lambda (true?)
+           (if true?
+               consequence
+               alternate))
+         #:promise? #t))))
+
+(define-syntax if-on-np
+  ;; Syntax sugar to combine @code{on} and @code{if} without returning a promise
+  ;;
+  ;; Type: Promise Expression Expression ->
+  (syntax-rules ()
+    ((_ test consequence)
+     (on test
+         (lambda (true?)
+           (if true?
+               consequence))))
+    ((_ test consequence alternate)
+     (on test
+         (lambda (true?)
+           (if true?
+               consequence
+               alternate))))))
+
+; Emacs: (put 'match-on 'scheme-indent-function 1)
+(define-syntax-rule (match-on promise clause1 clause2 ...)
+  ;; Syntax sugar to combine @code{on} and @code{match}
+  ;;
+  ;; Type: Promise Expression ... -> Promise
+  (on promise
+      (match-lambda
+        clause1
+        clause2
+        ...)
+      #:promise? #t))
+
+; Emacs: (put 'match-on-np 'scheme-indent-function 1)
+(define-syntax-rule (match-on-np promise clause1 clause2 ...)
+  ;; Syntax sugar to combine @code{on} and @code{match} without returning a
+  ;; promise
+  ;;
+  ;; Type: Promise Expression ... ->
+  (on promise
+      (match-lambda
+        clause1
+        clause2
+        ...)))
