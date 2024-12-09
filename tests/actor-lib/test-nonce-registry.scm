@@ -13,90 +13,90 @@
 ;;; See the License for the specific language governing permissions and
 ;;; limitations under the License.
 
-(define-module (tests actor-lib test-swappable)
-  #:use-module (goblins core)
-  #:use-module (goblins define-actor)
-  #:use-module (goblins actor-lib nonce-registry)
-  #:use-module (tests utils)
-  #:use-module (srfi srfi-64))
+(use-modules (goblins core)
+             (goblins define-actor)
+             (goblins actor-lib nonce-registry)
+             (tests utils)
+             (srfi srfi-64))
 
-(test-begin "test-nonce-registry")
+(wrap-async-tests
+ (test-begin "test-nonce-registry")
 
-(define am (make-actormap))
-(define-actor (^person _bcom name)
-  (lambda ()
-    name))
-
-(define alice
-  (actormap-spawn! am ^person 'i-am-alice))
-(define bob
-  (actormap-spawn! am ^person 'i-am-bob))
-
-(define-values (registry locator)
-  (actormap-run!
-   am
+ (define am (make-actormap))
+ (define-actor (^person _bcom name)
    (lambda ()
-     (spawn-nonce-registry-and-locator))))
+     name))
 
-(define alice-swiss-num
-  (actormap-poke!
-   am
-   registry 'register alice))
+ (define alice
+   (actormap-spawn! am ^person 'i-am-alice))
+ (define bob
+   (actormap-spawn! am ^person 'i-am-bob))
 
-(define bob-swiss-num
-  (actormap-poke!
-   am
-   registry 'register bob))
+ (define-values (registry locator)
+   (actormap-run!
+    am
+    (lambda ()
+      (spawn-nonce-registry-and-locator))))
 
-(test-assert "swiss nums for different objects are not the same"
-  (not (equal? alice-swiss-num
-               bob-swiss-num)))
+ (define alice-swiss-num
+   (actormap-poke!
+    am
+    registry 'register alice))
 
-(test-equal "the same object registered twice will yeild the same swiss-num"
-  alice-swiss-num
-  (actormap-peek am registry 'register alice))
+ (define bob-swiss-num
+   (actormap-poke!
+    am
+    registry 'register bob))
 
-(test-eq "alice swiss num retrieves alice"
-  alice
-  (actormap-peek
-   am
-   registry 'fetch alice-swiss-num))
+ (test-assert "swiss nums for different objects are not the same"
+   (not (equal? alice-swiss-num
+                bob-swiss-num)))
 
-(test-eq "bob swiss num retrieves bob"
-  bob
-  (actormap-peek
-   am
-   registry 'fetch bob-swiss-num))
+ (test-equal "the same object registered twice will yeild the same swiss-num"
+   alice-swiss-num
+   (actormap-peek am registry 'register alice))
 
-(test-eq "locator fetch and registry fetch retrieve same object"
-  (actormap-peek
-   am
-   registry 'fetch alice-swiss-num)
-  (actormap-peek
-   am
-   locator 'fetch alice-swiss-num))
-
-(test-equal "retrieved objects can be invoked"
-  'i-am-bob
-  (actormap-peek
-   am
+ (test-eq "alice swiss num retrieves alice"
+   alice
    (actormap-peek
     am
-    locator 'fetch bob-swiss-num)))
+    registry 'fetch alice-swiss-num))
 
-;; Persistence
-(define env
-  (make-persistence-env
-   `((((tests actor-lib test-nonce-registry) ^person) ,^person))
-   #:extends nonce-registry-env))
-(define-values (am* registry* alice* bob*)
-  (persist-and-restore am env registry alice bob))
-(test-eq "Alice can be looked up in registry after rehydration"
-  alice*
-  (actormap-peek am* registry* 'fetch alice-swiss-num))
+ (test-eq "bob swiss num retrieves bob"
+   bob
+   (actormap-peek
+    am
+    registry 'fetch bob-swiss-num))
 
-(test-eq "Bob can be looked up in registry after rehydration"
-  bob*
-  (actormap-peek am* registry* 'fetch bob-swiss-num))
+ (test-eq "locator fetch and registry fetch retrieve same object"
+   (actormap-peek
+    am
+    registry 'fetch alice-swiss-num)
+   (actormap-peek
+    am
+    locator 'fetch alice-swiss-num))
 
-(test-end "test-nonce-registry")
+ (test-equal "retrieved objects can be invoked"
+   'i-am-bob
+   (actormap-peek
+    am
+    (actormap-peek
+     am
+     locator 'fetch bob-swiss-num)))
+
+ ;; Persistence
+ (define env
+   (make-persistence-env
+    `((((tests actor-lib test-nonce-registry) ^person) ,^person))
+    #:extends nonce-registry-env))
+ (define-values (am* registry* alice* bob*)
+   (persist-and-restore am env registry alice bob))
+ (test-eq "Alice can be looked up in registry after rehydration"
+   alice*
+   (actormap-peek am* registry* 'fetch alice-swiss-num))
+
+ (test-eq "Bob can be looked up in registry after rehydration"
+   bob*
+   (actormap-peek am* registry* 'fetch bob-swiss-num))
+
+ (test-end "test-nonce-registry"))
