@@ -23,7 +23,8 @@
   #:export (am-resolve-vow-and-return-result
             resolve-vow-and-return-result
             persist-and-restore
-            am-churn! am-churn!*))
+            am-churn! am-churn!*
+            wrap-async-tests))
 
 (define* (am-resolve-vow-and-return-result am goblins-thunk #:key (timeout 2))
   (define vow (actormap-churn-run! am goblins-thunk))
@@ -86,3 +87,15 @@
       (lambda ()
         (actormap-restore! restored-am env portraits root-slots))
     list)))
+
+(define-syntax-rule (wrap-async-tests body ...)
+  (cond-expand
+   (hoot
+    (lambda (resolved rejected)
+      (call-with-async-result
+       resolved rejected
+       (lambda ()
+         body ...))))
+   (guile
+    (let ()
+      body ...))))
