@@ -761,7 +761,7 @@
        (list))
      (portraitize main-beh self-portrait))))
 (define first (actormap-spawn! first-actormap ^first))
-(define env
+(define env-2
   (make-persistence-env
    `((((tests test-core) ^first) ,^first)
      (((tests test-core) ^second) ,^second))))
@@ -774,7 +774,7 @@
    (lambda ()
      ($ second))))
 
-(actormap-replace-behavior! first-actormap env)
+(actormap-replace-behavior! first-actormap env-2)
 (test-equal "Redefinable objects can spawn other objects on construction"
   '(second pineapple)
   (actormap-peek first-actormap first))
@@ -853,17 +853,17 @@
           supplied-refr refr-vow encased-vow
           ocapn-node ocapn-sref))
   (portraitize main-beh self-portrait))
-(define env
+(define env-3
   (make-persistence-env
    `((((tests test-core) ^type-serializer) ,^type-serializer)
      (((tests test-core) ^bar) ,^bar))))
 
 (define bar (actormap-spawn! first-actormap ^bar 'foo))
 (define types (actormap-spawn! first-actormap ^type-serializer bar))
-(define-values (portraits slots)
-  (actormap-take-portrait first-actormap env types bar))
+(define-values (portraits-2 slots)
+  (actormap-take-portrait first-actormap env-3 types bar))
 (define-values (types* bar*)
-  (actormap-restore! first-actormap env portraits slots))
+  (actormap-restore! first-actormap env-3 portraits-2 slots))
 (test-assert "All serializable types can be serialized by aurie"
   (actormap-peek first-actormap types* bar*))
 
@@ -872,16 +872,16 @@
    (tests test-core)
    ^type-serializer ^bar))
 
-(define-values (portraits slots)
+(define-values (portraits-3 slots-3)
   (actormap-take-portrait first-actormap namespaced-env types bar))
-(define-values (types* bar*)
-  (actormap-restore! first-actormap namespaced-env portraits slots))
+(define-values (types*-2 bar*-2)
+  (actormap-restore! first-actormap namespaced-env portraits-3 slots-3))
 (test-assert "Can serialize and rehydrate with env made by namespace-env"
-  (actormap-peek first-actormap types* bar*))
+  (actormap-peek first-actormap types*-2 bar*-2))
 
 (test-equal "Name of object is as expected when made with namespace-env"
   '((tests test-core) ^type-serializer)
-  (match (hashq-ref portraits (car slots))
+  (match (hashq-ref portraits-3 (car slots-3))
     [(name debug-name portrait-version portrait-data) name]))
 
 (test-end "test-goblins-core")

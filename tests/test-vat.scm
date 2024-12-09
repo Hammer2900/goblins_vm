@@ -40,6 +40,64 @@
              (srfi srfi-64)
              (tests utils))
 
+(cond-expand
+ (hoot #t)
+ (guile
+  (test-begin "test-vat-guile")
+
+  ;; Test changing the behavior
+  (define-actor (^foo _bcom)
+    (lambda ()
+      'foo))
+
+  (define foo-env
+    (make-persistence-env
+     `((((tests test-vat) ^foo) ,^foo))))
+
+  (define foo-mem (make-memory-store))
+  (define-values (persistent-vat foo)
+    (spawn-persistent-vat
+     foo-env
+     (lambda ()
+       (spawn ^foo))
+     foo-mem))
+
+  (define-actor (^foo _bcom)
+    (lambda ()
+      'bar))
+
+  (vat-replace-behavior! persistent-vat)
+  (test-equal "Object behavior changes after using vat-replace-behavior!"
+    'bar
+    (with-vat persistent-vat
+      ($ foo)))
+
+  ;; Now change the behavior but add an object to the env
+  (define-actor (^bar _bcom)
+    (lambda ()
+      'i-am-bar))
+  (define-actor (^foo _bcom bar)
+    (lambda ()
+      bar))
+  (define (restore-foo _version)
+    (spawn ^foo (spawn ^bar)))
+  (define foo-env-2
+    (make-persistence-env
+     `((((tests test-vat) ^foo) ,^foo ,restore-foo)
+       (((tests test-vat) ^bar) ,^bar))))
+  (vat-replace-behavior! persistent-vat foo-env-2)
+
+  (test-assert
+      (live-refr?
+       (with-vat persistent-vat
+         ($ foo))))
+  (test-equal "Objects can add new objects when using vat-replace-behavior!"
+    'i-am-bar
+    (with-vat persistent-vat
+      ($ ($ foo))))
+
+  (test-end "test-vat-guile")))
+
 (wrap-async-tests
  (test-begin "test-vat")
 
@@ -49,9 +107,17 @@
    a-vat
    (lookup-vat (vat-id a-vat)))
 
- (test-equal "List vats"
-   (list a-vat)
-   (all-vats))
+ (test-assert "List vats"
+   ;; We need to return a lambda from this file for call-with-async-result on
+   ;; Hoot.  We need to run some tests on Guile and not on Hoot.  Things get
+   ;; weird when we nest cond-expands.  So, we need to run Guile-only tests
+   ;; before the main tests.  Those tests create a vat.  all-vats therefore
+   ;; returns a different value on Hoot and Guile at this point.  We test to
+   ;; ensure the result has the expect shape and universal value on both hosts
+   ;; without using cond-expand.
+   (match (all-vats)
+     (((? (lambda (vat) (eq? vat a-vat))) . rest) #t)
+     (_ #f)))
 
  (define (^friendo _bcom)
    (lambda ()
@@ -1022,102 +1088,51 @@
    ($ list1 two)
    ($ list2 one))
 
- (define-values (vat-aurie-id roots-version portraits _roots)
+ (define-values (vat-aurie-id-1 roots-version-1 portraits-1 _roots-1)
    (read-from-store 'graph-and-slots))
  
  (test-equal "Check the version is saved properly"
    72
-   roots-version)
+   roots-version-1)
 
  ;; There should be 4 objs: one, two, list1, list2
  (test-equal "Number of objects portraits is correct amount"
    4
-   (hash-count (const #t) portraits))
+   (hash-count (const #t) portraits-1))
 
  ;; Now add two to list2 (not adding any new objects to the graph)
  (with-vat persistent-vat
    ($ list2 two))
- (define-values (vat-aurie-id _roots-version portraits _roots)
+ (define-values (vat-aurie-id-2 _roots-version-2 portraits-2 _roots-2)
    (read-from-store 'graph-and-slots))
  (test-equal "Number of objects in graph remains same when no new object introduced"
    4
-   (hash-count (const #t) portraits))
+   (hash-count (const #t) portraits-2))
 
  ;; Add a new object to the graph by adding it to one of the
  ;; existing children.
  (with-vat persistent-vat
    ($ one (spawn ^list)))
- (define-values (vat-aurie-id _roots-version portraits _roots)
+ (define-values (vat-aurie-id-3 _roots-version-3 portraits-3 _roots-3)
    (read-from-store 'graph-and-slots))
 
  (test-equal "Number of objects in graph increases when new object added to child"
    5
-   (hash-count (const #t) portraits))
+   (hash-count (const #t) portraits-3))
 
  (with-vat persistent-vat
    ($ list2 (spawn ^list)))
- (define-values (vat-aurie-id _roots-version portraits _roots)
+ (define-values (vat-aurie-id-4 _roots-version-4 portraits-4 _roots-4)
    (read-from-store 'graph-and-slots))
 
  (test-equal "Number of objects in graph increases when new object added to parent"
    6
-   (hash-count (const #t) portraits))
+   (hash-count (const #t) portraits-4))
 
  (test-equal "call-system-op-with-vat gets vat"
    (list 'got-vat a-vat)
    (call-system-op-with-vat
     a-vat (lambda (vat) (list 'got-vat vat))))
-
- ;; Test changing the behavior
- (define-actor (^foo _bcom)
-   (lambda ()
-     'foo))
-
- (define foo-env
-   (make-persistence-env
-    `((((tests test-vat) ^foo) ,^foo))))
-
- (define foo-mem (make-memory-store))
- (define-values (persistent-vat foo)
-   (spawn-persistent-vat
-    foo-env
-    (lambda ()
-      (spawn ^foo))
-    foo-mem))
-
- (define-actor (^foo _bcom)
-   (lambda ()
-     'bar))
-
- (vat-replace-behavior! persistent-vat)
- (test-equal "Object behavior changes after using vat-replace-behavior!"
-   'bar
-   (with-vat persistent-vat
-     ($ foo)))
-
- ;; Now change the behavior but add an object to the env
- (define-actor (^bar _bcom)
-   (lambda ()
-     'i-am-bar))
- (define-actor (^foo _bcom bar)
-   (lambda ()
-     bar))
- (define (restore-foo _version)
-   (spawn ^foo (spawn ^bar)))
- (define foo-env
-   (make-persistence-env
-    `((((tests test-vat) ^foo) ,^foo ,restore-foo)
-      (((tests test-vat) ^bar) ,^bar))))
- (vat-replace-behavior! persistent-vat foo-env)
-
- (test-assert
-     (live-refr?
-      (with-vat persistent-vat
-        ($ foo))))
- (test-equal "Objects can add new objects when using vat-replace-behavior!"
-   'i-am-bar
-   (with-vat persistent-vat
-     ($ ($ foo))))
 
  (define aurie-vat (spawn-vat))
  (define persistence-registry
@@ -1125,7 +1140,7 @@
      (spawn ^persistence-registry)))
 
  (define a-vat-store (make-memory-store))
- (define-values (a-vat a-cell)
+ (define-values (a-persistent-vat a-cell)
    (spawn-persistent-vat
     cell-env
     (lambda () (spawn ^cell))
@@ -1133,7 +1148,7 @@
     #:persistence-registry persistence-registry))
 
  (define b-vat-store (make-memory-store))
- (define-values (b-vat b-cell)
+ (define-values (b-persistent-vat b-cell)
    (spawn-persistent-vat
     cell-env
     (lambda () (spawn ^cell a-cell))
@@ -1145,14 +1160,14 @@
    (with-vat aurie-vat
      (spawn ^persistence-registry)))
 
- (define-values (a-vat* a-cell*)
+ (define-values (a-persistent-vat* a-cell*)
    (spawn-persistent-vat
     cell-env
     (lambda () (error "Should be being restored from the memory"))
     a-vat-store
     #:persistence-registry persistence-registry*))
 
- (define-values (b-vat* b-cell*)
+ (define-values (b-persistent-vat* b-cell*)
    (spawn-persistent-vat
     cell-env
     (lambda () (error "Should be being restored from the memory"))
@@ -1161,15 +1176,15 @@
 
  (test-assert "A far reference can be persisted and restored"
    (match (resolve-vow-and-return-result
-           b-vat*
+           b-persistent-vat*
            (lambda () (<- b-cell*)))
      [#(ok hopefully-far-refr)
-      (and (with-vat b-vat* (far-refr? hopefully-far-refr))
+      (and (with-vat b-persistent-vat* (far-refr? hopefully-far-refr))
            (eq? hopefully-far-refr a-cell*))]))
 
  ;; Test upgrading the roots of a vat
  (define memory (make-memory-store))
- (define-values (vat a-cell)
+ (define-values (vat a-cell-2)
    (spawn-persistent-vat
     cell-env
     (lambda ()
@@ -1182,7 +1197,7 @@
  (let ((found-cell #f)
        (new-root-one #f)
        (new-root-two #f))
-   (define-values (vat* a-cell b-cell)
+   (define-values (vat* a-cell-3 b-cell-2)
      (spawn-persistent-vat
       cell-env
       (lambda ()
@@ -1201,6 +1216,6 @@
      (live-refr? found-cell))
    (test-equal "Got upgraded two cells as values"
      (list new-root-one new-root-two)
-     (list a-cell b-cell)))
+     (list a-cell-3 b-cell-2)))
 
  (test-end "test-vat"))

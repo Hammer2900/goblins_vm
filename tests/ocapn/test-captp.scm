@@ -162,7 +162,7 @@
  (define bob
    (with-vat b-vat
      (spawn ^bob)))
- (define bob-sref
+ (define bob-sref-2
    (with-vat b-vat
      ($ b-mycapn 'register bob 'fake)))
 
@@ -178,7 +178,7 @@
  (define alice
    (with-vat a-vat
      ;; Bootstrap bob and carol with sturdyrefs
-     (define bob-vow ($ a-mycapn 'enliven bob-sref))
+     (define bob-vow ($ a-mycapn 'enliven bob-sref-2))
      (define carol-vow ($ a-mycapn 'enliven carol-sref))
      ;; The vows need to be resolved for this to perform a handoff
      (on (all-of bob-vow carol-vow)
@@ -273,7 +273,7 @@
          (lambda ()
            (define-values (sever-vow sever-resolver)
              (spawn-promise-and-resolver))
-           (define bob-vow ($ a-mycapn 'enliven bob-sref))
+           (define bob-vow ($ a-mycapn 'enliven bob-sref-2))
            (on bob-vow
                (lambda (bob)
                  ;; To sever the connection send a op:abort
@@ -298,7 +298,7 @@
            (define (^notifier _bcom)
              (lambda (shutdown-type reason)
                ($ sever-resolver 'fulfill `(severed ,shutdown-type ,reason))))
-           (define bob-vow ($ c-mycapn 'enliven bob-sref))
+           (define bob-vow ($ c-mycapn 'enliven bob-sref-2))
            (on bob-vow
                (lambda (bob)
                  ;; To sever the connection send a op:abort
@@ -313,16 +313,16 @@
      #(ok (severed abort "testing on-sever with actor handler"))
      result))
 
- (define-values (a-vat a-netlayer a-mycapn)
+ (define-values (a-vat-2 a-netlayer-2 a-mycapn-2)
    (make-new-node "a"))
- (define-values (b-vat b-netlayer b-mycapn)
+ (define-values (b-vat-2 b-netlayer-2 b-mycapn-2)
    (make-new-node "b"))
- (define bob-sref
-   (with-vat b-vat
-     ($ b-mycapn 'register (spawn ^greeter "Bob") 'fake)))
+ (define bob-sref-3
+   (with-vat b-vat-2
+     ($ b-mycapn-2 'register (spawn ^greeter "Bob") 'fake)))
  (let ((result
         (resolve-vow-and-return-result
-         a-vat
+         a-vat-2
          (lambda ()
            (define-values (sever-vow sever-resolver)
              (spawn-promise-and-resolver))
@@ -334,7 +334,7 @@
              (lambda (shutdown-type reason)
                ($ sever-resolver 'fulfill (list 'severed shutdown-type reason))))
 
-           (define bob-vow ($ a-mycapn 'enliven bob-sref))
+           (define bob-vow ($ a-mycapn-2 'enliven bob-sref-3))
            (on bob-vow
                (lambda (bob)
                  ;; To sever the connection send a op:abort
@@ -351,23 +351,23 @@
 
  ;; Test for enlivening the srefs to same node twice at the same time
  ;; Requires fresh connections
- (define-values (a-vat a-netlayer a-mycapn)
+ (define-values (a-vat-3 a-netlayer-3 a-mycapn-3)
    (make-new-node "a"))
- (define-values (b-vat b-netlayer b-mycapn)
+ (define-values (b-vat-3 b-netlayer-3 b-mycapn-3)
    (make-new-node "b"))
 
  (define-values (cell-1-sref cell-2-sref)
-   (with-vat a-vat
-     (values ($ a-mycapn 'register (spawn ^cell) 'fake)
-             ($ a-mycapn 'register (spawn ^cell) 'fake))))
+   (with-vat a-vat-3
+     (values ($ a-mycapn-3 'register (spawn ^cell) 'fake)
+             ($ a-mycapn-3 'register (spawn ^cell) 'fake))))
 
  (test-equal "Two srefs to the same node produce only 1 connection"
    #(ok #t)
    (resolve-vow-and-return-result
-    b-vat
+    b-vat-3
     (lambda ()
-      (let ((cell-1-vow ($ b-mycapn 'enliven cell-1-sref))
-            (cell-2-vow ($ b-mycapn 'enliven cell-2-sref)))
+      (let ((cell-1-vow ($ b-mycapn-3 'enliven cell-1-sref))
+            (cell-2-vow ($ b-mycapn-3 'enliven cell-2-sref)))
         (on cell-1-vow
             (lambda (cell-1-resolved)
               (on cell-2-vow
