@@ -14,34 +14,17 @@
 ;;; See the License for the specific language governing permissions and
 ;;; limitations under the License.
 
-(define-module (tests test-core)
-  #:use-module (goblins core)
-  #:use-module (goblins core-types)
-  #:use-module (goblins abstract-types)
-  #:use-module (goblins ghash)
-  #:use-module (goblins ocapn ids)
-  #:use-module (ice-9 match)
-  #:use-module (rnrs bytevectors)
-  #:use-module (srfi srfi-64)
-  #:use-module (srfi srfi-11))
+(use-modules (goblins core)
+             (goblins core-types)
+             (goblins abstract-types)
+             (goblins ghash)
+             (goblins ocapn ids)
+             (ice-9 match)
+             (rnrs bytevectors)
+             (srfi srfi-64)
+             (srfi srfi-11))
 
 (test-begin "test-goblins-core")
-
-;;; actormap low-level behavior tests
-;;; =================================
-
-(define-syntax-rule (snarf id ...)
-  (begin
-    (define id
-      (@@ (goblins core) id))
-    ...))
-
-(snarf make-local-object-refr
-       whactormap-set!
-       whactormap-ref
-       transactormap-set!
-       transactormap-ref
-       transactormap-merged?)
 
 (define-syntax-rule (quietly body ...)
   (parameterize ((current-output-port (%make-void-port "w"))
@@ -67,6 +50,11 @@
 
 (define tam1
   (make-transactormap actormap-base))
+(define-values (transactormap-set! transactormap-ref)
+  (let ((transactormap-metatype (actormap-metatype tam1)))
+    (values
+     (actormap-metatype-set!-proc transactormap-metatype)
+     (actormap-metatype-ref-proc transactormap-metatype))))
 (define (incr-tam1-base!)
   (increment-actormap-aurie-counter! tam1))
 (define bipper-refr (make-local-object-refr 'bipper #f (incr-tam1-base!)))
@@ -346,8 +334,6 @@
 (define-values (bob-vow bob-resolver)
   (actormap-run! am spawn-promise-and-resolver))
 
-(snarf mactor:local-link?)
-
 (actormap-poke! am bob-resolver 'fulfill bob)
 (test-assert
  "Promise resolves to local-link"
@@ -369,8 +355,6 @@
 (test-equal "Using `on' against a resolved refr returns that refr"
   bob
   on-resolved-bob-arg)
-
-(snarf near-settled-promise-value)
 
 (test-eq "near-settled-promise-value can extract local-refr value"
  bob
@@ -663,23 +647,26 @@
   "Hello Ludvig, my name is *restored Astrid* (called 3).")
 
 
-(set-redefinable-object-constructor!
- ^persistent-greeter
- (lambda* (bcom our-name #:optional init-number-of-times)
-   (define number-of-times
-     (or init-number-of-times (spawn ^incrementer)))
-   (define (main-beh your-name)
-     (format #f "Salutations ~a, I am called ~a, delighted to make your acquaintance! (called: ~a)"
-             your-name our-name ($ number-of-times)))
-   (define (self-portrait)
-     (list our-name number-of-times))
-   (portraitize main-beh self-portrait)))
+(cond-expand
+ (hoot #f)
+ (guile
+  (set-redefinable-object-constructor!
+   ^persistent-greeter
+   (lambda* (bcom our-name #:optional init-number-of-times)
+     (define number-of-times
+       (or init-number-of-times (spawn ^incrementer)))
+     (define (main-beh your-name)
+       (format #f "Salutations ~a, I am called ~a, delighted to make your acquaintance! (called: ~a)"
+               your-name our-name ($ number-of-times)))
+     (define (self-portrait)
+       (list our-name number-of-times))
+     (portraitize main-beh self-portrait)))
 
-(actormap-replace-behavior! first-actormap greeter-env)
+  (actormap-replace-behavior! first-actormap greeter-env)
 
-(test-equal "Actors are updated when the behavior is replaced by new behavior"
-  (actormap-peek first-actormap astrid-greeter "Ludvig")
-  "Salutations Ludvig, I am called *restored Astrid*, delighted to make your acquaintance! (called: 3)")
+  (test-equal "Actors are updated when the behavior is replaced by new behavior"
+    (actormap-peek first-actormap astrid-greeter "Ludvig")
+    "Salutations Ludvig, I am called *restored Astrid*, delighted to make your acquaintance! (called: 3)")))
 
 ;; Test that when we restore what we get back is eq?
 (define (^ro-cell _bcom value)
@@ -741,43 +728,46 @@
       (lambda ()
         ($ foo2))))))
 
-;; Test spawning another actor in the restore behavior
-(define ^second
-  (make-redefinable-object
-   (lambda* (bcom #:optional stored-val)
-     (define* (main-beh #:optional new-val)
-       (if new-val
-           (bcom (^second bcom new-val) 'second)
-           (list 'second stored-val)))
-     (define (self-portrait)
-       (list stored-val))
-     (portraitize main-beh self-portrait))))
-(define ^first
-  (make-redefinable-object
+(cond-expand
+ (hoot #f)
+ (guile
+  ;; Test spawning another actor in the restore behavior
+  (define ^second
+    (make-redefinable-object
+     (lambda* (bcom #:optional stored-val)
+       (define* (main-beh #:optional new-val)
+         (if new-val
+             (bcom (^second bcom new-val) 'second)
+             (list 'second stored-val)))
+       (define (self-portrait)
+         (list stored-val))
+       (portraitize main-beh self-portrait))))
+  (define ^first
+    (make-redefinable-object
+     (lambda (_bcom)
+       (define (main-beh)
+         'first)
+       (define (self-portrait)
+         (list))
+       (portraitize main-beh self-portrait))))
+  (define first (actormap-spawn! first-actormap ^first))
+  (define env-2
+    (make-persistence-env
+     `((((tests test-core) ^first) ,^first)
+       (((tests test-core) ^second) ,^second))))
+  ;; Redefine it so that we spawn another object while being constructed!
+  (set-redefinable-object-constructor!
+   ^first
    (lambda (_bcom)
-     (define (main-beh)
-       'first)
-     (define (self-portrait)
-       (list))
-     (portraitize main-beh self-portrait))))
-(define first (actormap-spawn! first-actormap ^first))
-(define env-2
-  (make-persistence-env
-   `((((tests test-core) ^first) ,^first)
-     (((tests test-core) ^second) ,^second))))
-;; Redefine it so that we spawn another object while being constructed!
-(set-redefinable-object-constructor!
- ^first
- (lambda (_bcom)
-   (define second (spawn ^second #f))
-   (<-np second 'pineapple)
-   (lambda ()
-     ($ second))))
+     (define second (spawn ^second #f))
+     (<-np second 'pineapple)
+     (lambda ()
+       ($ second))))
 
-(actormap-replace-behavior! first-actormap env-2)
-(test-equal "Redefinable objects can spawn other objects on construction"
-  '(second pineapple)
-  (actormap-peek first-actormap first))
+  (actormap-replace-behavior! first-actormap env-2)
+  (test-equal "Redefinable objects can spawn other objects on construction"
+    '(second pineapple)
+    (actormap-peek first-actormap first))))
 
 ;; Test all supported types can be serialized correctly
 (define* (^type-serializer bcom supplied-refr

@@ -123,23 +123,11 @@
 
             ;; Deprecated
             spawn-promise-cons
-            spawn-promise-values)
+            spawn-promise-values
 
-  #:re-export (live-refr?
-               local-refr?
-               remote-refr?
-               promise-refr?
-               local-object-refr?
-               local-promise-refr?
-               remote-object-refr?
-               remote-promise-refr?
+            ;; For tests
+            mactor:local-link?)
 
-               actormap-vat-connector
-
-               whactormap?
-
-               portraitize
-               versioned)
   #:replace (spawn)
   #:use-module (srfi srfi-9)
   #:use-module (srfi srfi-9 gnu)
