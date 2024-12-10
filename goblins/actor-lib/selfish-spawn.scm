@@ -14,10 +14,11 @@
 
 (define-module (goblins actor-lib selfish-spawn)
   #:use-module (goblins)
+  #:use-module (goblins utils deprecation)
   #:export (selfish-spawn))
 
 (define (selfish-spawn constructor . args)
-  (issue-deprecation-warning
+  (warn-of-deprecation
    "Selfish-spawn is deprecated, use define-actor with the #:self keyword instead.")
   (define (^selfish bcom)
     (lambda (self)

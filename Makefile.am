@@ -95,6 +95,7 @@ SOURCES = goblins.scm \
           goblins/utils/base32.scm \
           goblins/utils/bytes-stuff.scm \
           goblins/utils/crypto.scm \
+          goblins/utils/deprecation.scm \
           goblins/utils/error-handling.scm \
           goblins/utils/graphviz.scm \
           goblins/utils/random-name.scm \

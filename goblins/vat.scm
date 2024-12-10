@@ -24,6 +24,7 @@
   #:use-module (goblins abstract-types)
   #:use-module (goblins default-vat-scheduler)
   #:use-module (goblins utils crypto)
+  #:use-module (goblins utils deprecation)
   #:use-module (goblins utils error-handling)
   #:use-module (goblins utils ring-buffer)
   #:use-module (fibers)
@@ -1122,7 +1123,7 @@ Type: (Optional (#:name (U String Symbol)) (Optional (#:log? Boolean))
   (syntax-rules ()
     ((define-vat-run vat-run-id vat)
      (begin
-       (issue-deprecation-warning
+       (warn-of-deprecation
         "`define-vat-run' is deprecated. Use `call-with-vat', `with-vat', or `,enter-vat' REPL command instead.")
        (define this-vat vat)
        (define-syntax vat-run-id

@@ -154,7 +154,8 @@
   #:use-module (goblins abstract-types)
   #:use-module (goblins ghash)
   #:use-module (goblins ocapn ids)
-  #:use-module (goblins utils error-handling))
+  #:use-module (goblins utils error-handling)
+  #:use-module (goblins utils deprecation))
 
 
 ;;; Utilities (which should be moved to their own modules)
@@ -2065,13 +2066,13 @@ Type: -> (Values Promise Resolver)"
 
 ;; Deprecated
 (define (spawn-promise-values)
-  (issue-deprecation-warning
-   "Spawn-promise-values is deprecated in favor of spawn-promise-and-resolver")
+  (warn-of-deprecation
+   "spawn-promise-values is deprecated in favor of spawn-promise-and-resolver")
   (spawn-promise-and-resolver))
 (define (spawn-promise-cons)
   "This procedure is deprecated, use spawn-promise-and-resolver instead."
-  (issue-deprecation-warning
-   "Spawn-promise-cons is deprecated in favor of spawn-promise-and-resolver")
+  (warn-of-deprecation
+   "spawn-promise-cons is deprecated in favor of spawn-promise-and-resolver")
   (call-with-values spawn-promise-and-resolver cons))
 
 
