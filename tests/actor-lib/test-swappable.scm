@@ -12,12 +12,11 @@
 ;;; See the License for the specific language governing permissions and
 ;;; limitations under the License.
 
-(define-module (tests actor-lib test-swappable)
-  #:use-module (goblins core)
-  #:use-module (goblins define-actor)
-  #:use-module (goblins actor-lib swappable)
-  #:use-module (tests utils)
-  #:use-module (srfi srfi-64))
+(use-modules (goblins core)
+             (goblins define-actor)
+             (goblins actor-lib swappable)
+             (tests utils)
+             (srfi srfi-64))
 
 (test-begin "test-swappable")
 

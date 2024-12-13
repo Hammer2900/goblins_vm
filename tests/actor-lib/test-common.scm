@@ -12,12 +12,11 @@
 ;;; See the License for the specific language governing permissions and
 ;;; limitations under the License.
 
-(define-module (tests actor-lib test-common)
-  #:use-module (goblins core)
-  #:use-module (goblins ghash)
-  #:use-module (goblins actor-lib common)
-  #:use-module (tests utils)
-  #:use-module (srfi srfi-64))
+(use-modules (goblins core)
+             (goblins ghash)
+             (goblins actor-lib common)
+             (tests utils)
+             (srfi srfi-64))
 
 (test-begin "test-common")
 

@@ -1,10 +1,9 @@
-(define-module (tests contrib test-syrup-internals)
-  #:use-module (goblins contrib syrup)
-  #:use-module (rnrs bytevectors)
-  #:use-module (srfi srfi-64)          ; tests
-  #:use-module (ice-9 iconv)
-  #:use-module (ice-9 hash-table)
-  #:use-module (ice-9 match))
+(use-modules (goblins contrib syrup)
+             (rnrs bytevectors)
+             (srfi srfi-64)             ; tests
+             (ice-9 iconv)
+             (ice-9 hash-table)
+             (ice-9 match))
 
 ;; Pull in a bunch of internals from Syrup to test
 (define-syntax-rule (snarf-syrup-internals id ...)

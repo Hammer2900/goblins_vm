@@ -19,12 +19,11 @@
 ;; of something else, like fashes, in the future.
 
 
-(define-module (test test-ghash)
-  #:use-module (goblins ghash)
-  #:use-module (goblins core)
-  #:use-module (srfi srfi-64)
-  #:use-module (ice-9 hash-table))
-  
+(use-modules (goblins ghash)
+             (goblins core)
+             (srfi srfi-64)
+             (ice-9 hash-table))
+
 (test-begin "test-ghash")
 
 (define gh1 (make-ghash 'key1 'val1 'key2 'val2))

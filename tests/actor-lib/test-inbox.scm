@@ -12,11 +12,10 @@
 ;;; See the License for the specific language governing permissions and
 ;;; limitations under the License.
 
-(define-module (tests actor-lib test-inbox)
-  #:use-module (goblins)
-  #:use-module (goblins actor-lib inbox)
-  #:use-module (tests utils)
-  #:use-module (srfi srfi-64))
+(use-modules (goblins)
+             (goblins actor-lib inbox)
+             (tests utils)
+             (srfi srfi-64))
 
 (test-begin "test-inbox")
 

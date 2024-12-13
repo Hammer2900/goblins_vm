@@ -12,10 +12,9 @@
 ;;; See the License for the specific language governing permissions and
 ;;; limitations under the License.
 
-(define-module (tests actor-lib test-selfish-spawn)
-  #:use-module (goblins)
-  #:use-module (goblins actor-lib selfish-spawn)
-  #:use-module (srfi srfi-64))
+(use-modules (goblins)
+             (goblins actor-lib selfish-spawn)
+             (srfi srfi-64))
 
 (test-begin "test-selfish-spawn")
 

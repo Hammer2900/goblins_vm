@@ -12,11 +12,10 @@
 ;;; See the License for the specific language governing permissions and
 ;;; limitations under the License.
 
-(define-module (tests actor-lib test-cell)
-  #:use-module (goblins core)
-  #:use-module (goblins actor-lib cell)
-  #:use-module (tests utils)
-  #:use-module (srfi srfi-64))
+(use-modules (goblins core)
+             (goblins actor-lib cell)
+             (tests utils)
+             (srfi srfi-64))
 
 (test-begin "test-cell")
 

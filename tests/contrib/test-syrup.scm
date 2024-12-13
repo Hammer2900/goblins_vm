@@ -1,14 +1,13 @@
-(define-module (tests contrib test-syrup)
-  #:use-module (goblins contrib syrup)
-  #:use-module (goblins abstract-types)
-  #:use-module (goblins ghash)
-  #:use-module (ice-9 match)
-  #:use-module (ice-9 hash-table)
-  #:use-module (ice-9 binary-ports)
-  #:use-module (srfi srfi-1)     ; lists
-  #:use-module (srfi srfi-9)     ; records
-  #:use-module (srfi srfi-64)    ; tests
-  #:use-module (rnrs bytevectors))
+(use-modules (goblins contrib syrup)
+             (goblins abstract-types)
+             (goblins ghash)
+             (ice-9 match)
+             (ice-9 hash-table)
+             (ice-9 binary-ports)
+             (srfi srfi-1)              ; lists
+             (srfi srfi-9)              ; records
+             (srfi srfi-64)             ; tests
+             (rnrs bytevectors))
 
 (test-begin "test-syrup")
 

@@ -1,11 +1,10 @@
-(define-module (tests persistence-store test-syrup)
-  #:use-module (goblins)
-  #:use-module (goblins core-types)
-  #:use-module (goblins persistence-store syrup)
-  #:use-module (goblins contrib syrup)
-  #:use-module (srfi srfi-9)
-  #:use-module (srfi srfi-64)
-  #:use-module (ice-9 match))
+(use-modules (goblins)
+             (goblins core-types)
+             (goblins persistence-store syrup)
+             (goblins contrib syrup)
+             (srfi srfi-9)
+             (srfi srfi-64)
+             (ice-9 match))
 
 (test-begin "test-syrup-store")
 

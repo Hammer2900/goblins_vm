@@ -12,9 +12,8 @@
 ;;; See the License for the specific language governing permissions and
 ;;; limitations under the License.
 
-(define-module (tests utils ring-buffer)
-  #:use-module (goblins utils ring-buffer)
-  #:use-module (srfi srfi-64))
+(use-modules (goblins utils ring-buffer)
+             (srfi srfi-64))
 
 (test-begin "test-ring-buffer")
 

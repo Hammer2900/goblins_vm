@@ -13,13 +13,12 @@
 ;;; See the License for the specific language governing permissions and
 ;;; limitations under the License.
 
-(define-module (tests actor-lib simple-mint)
-  #:use-module (fibers conditions)
-  #:use-module (fibers operations)
-  #:use-module (goblins)
-  #:use-module (goblins actor-lib let-on)
-  #:use-module (srfi srfi-64)
-  #:use-module (tests utils))
+(use-modules (fibers conditions)
+             (fibers operations)
+             (goblins)
+             (goblins actor-lib let-on)
+             (srfi srfi-64)
+             (tests utils))
 
 (test-begin "test-let-on")
 

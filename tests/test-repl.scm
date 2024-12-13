@@ -12,12 +12,11 @@
 ;;; See the License for the specific language governing permissions and
 ;;; limitations under the License.
 
-(define-module (goblins test-repl)
-  #:use-module (goblins)
-  #:use-module (goblins vat)
-  #:use-module (ice-9 regex)
-  #:use-module (srfi srfi-64)
-  #:use-module (tests repl-driver))
+(use-modules (goblins)
+             (goblins vat)
+             (ice-9 regex)
+             (srfi srfi-64)
+             (tests repl-driver))
 
 (test-begin "test-repl")
 

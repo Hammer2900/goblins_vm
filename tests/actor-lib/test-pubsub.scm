@@ -12,13 +12,12 @@
 ;;; See the License for the specific language governing permissions and
 ;;; limitations under the License.
 
-(define-module (tests actor-lib test-pubsub)
-  #:use-module (goblins core)
-  #:use-module (goblins define-actor)
-  #:use-module (goblins actor-lib pubsub)
-  #:use-module (tests utils)
-  #:use-module (srfi srfi-1)
-  #:use-module (srfi srfi-64))
+(use-modules (goblins core)
+             (goblins define-actor)
+             (goblins actor-lib pubsub)
+             (tests utils)
+             (srfi srfi-1)
+             (srfi srfi-64))
 
 (test-begin "test-pubsub")
 
