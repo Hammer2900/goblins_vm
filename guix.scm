@@ -29,6 +29,13 @@
               (string-contains file my-string))
             (list ".git" ".dir-locals.el" "guix.scm"))))
 
+(define (replace-guile pkg)
+  (package
+    (inherit pkg)
+    (inputs
+     (modify-inputs (package-inputs pkg)
+       (replace "guile" guile-next)))))
+
 (package
   (name "guile-goblins")
   (version "0.14.0-git")
@@ -46,13 +53,13 @@
      ,#~(list "GUILE_AUTO_COMPILE=0")))
   (native-inputs
    (list
-     autoconf
-     automake
-     pkg-config
-     texinfo))
-  (inputs (list guile-3.0))
+    autoconf
+    automake
+    pkg-config
+    texinfo))
+  (inputs (list guile-next))
   (propagated-inputs
-   (list guile-fibers guile-gnutls))
+   (map replace-guile (list guile-fibers guile-gnutls)))
   (synopsis "Transactional, distributed object programming environment")
   (description
    "Spritely Goblins is a transactional, distributed object programming
