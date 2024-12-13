@@ -14,6 +14,7 @@
 ;;; limitations under the License.
 
 (use-modules (goblins core)
+             (goblins core-types)
              (goblins vat)
              (goblins ocapn captp)
              (goblins ocapn ids)

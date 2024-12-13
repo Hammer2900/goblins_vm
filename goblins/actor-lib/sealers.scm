@@ -16,6 +16,7 @@
 
 (define-module (goblins actor-lib sealers)
   #:use-module (goblins core)
+  #:use-module (goblins core-types)
   #:use-module (goblins define-actor)
   #:use-module (goblins actor-lib methods)
   #:use-module ((goblins utils simple-sealers) #:prefix simple:)

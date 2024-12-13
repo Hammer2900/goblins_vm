@@ -13,6 +13,7 @@
 ;;; limitations under the License.
 ;;;
 (use-modules (goblins core)
+             (goblins core-types)
              (goblins migrations)
              (goblins define-actor)
              ((goblins core-types)
