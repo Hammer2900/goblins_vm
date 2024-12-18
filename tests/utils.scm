@@ -31,12 +31,17 @@
           resolve-vow-and-return-result
           persist-and-restore
           am-churn! am-churn!*
-          wrap-async-tests)
+          wrap-async-tests
+          maybe-run-fibers)
   (begin
+    (define-syntax-rule (maybe-run-fibers thunk args ...)
+      (cond-expand
+       (hoot (thunk))
+       (guile (run-fibers thunk args ...))))
 
     (define* (am-resolve-vow-and-return-result am goblins-thunk #:key (timeout 2))
       (define vow (actormap-churn-run! am goblins-thunk))
-      (run-fibers
+      (maybe-run-fibers
        (lambda ()
          (let ((results-ch (make-channel)))
            (actormap-churn-run!
