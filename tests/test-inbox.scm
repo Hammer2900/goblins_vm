@@ -10,7 +10,7 @@
  (test-begin "test-inbox")
 
  ;; Testing that the delivery agent queues and de-queues messages
- (run-fibers
+ (maybe-run-fibers
   (lambda ()
     (define-values (enq-ch deq-ch stop?)
       (spawn-delivery-agent))
