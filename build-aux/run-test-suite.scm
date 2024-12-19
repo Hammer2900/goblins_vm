@@ -79,12 +79,27 @@
 (define (hoot-flag? str)
   (string=? str "--hoot"))
 
+(define (hoot-async-flag? str)
+  (string=? str "--hoot-async"))
+
 (match (command-line)
+  ;; TODO
+  ;; * combine async and regular tests somehow
+  ;; * proper Hoot test driver with a custom test-runner object etc
   [(_ (? hoot-flag?) tests ...)
-   ;; TODO: proper Hoot test driver with a custom test-runner object etc
    (for-each
     (lambda (test-name)
-      ;; FIXME: we'd really prefer to only compile reused components once
+      (system* "guild" "compile-wasm"
+               "--run=node"
+               ;; FIXME: we ideally shouldn't be using relative paths
+               "-L" "../guile/module"
+               "-L" "hoot-modules"
+               "-L" "."
+               test-name))
+    tests)]
+  [(_ (? hoot-async-flag?) tests ...)
+   (for-each
+    (lambda (test-name)
       (system* "guild" "compile-wasm"
                "--run=node" "--async"
                "--user-imports=hoot-ffi/crypto.js"
