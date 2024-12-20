@@ -31,19 +31,27 @@
 (define %here (dirname (current-filename)))
 
 (define guile-hoot*
-  (let ((commit "f47f53dd7b6e56c10f1a034e22d85cf092867327"))
+  (let (;; (commit "f47f53dd7b6e56c10f1a034e22d85cf092867327")
+        (%source-dir (canonicalize-path "../guile-hoot/"))
+        )
     (package
       (inherit guile-hoot)
       (version (string-append (package-version guile-hoot)
-                              "-1." (string-take commit 7)))
-      (source (origin
-                (method git-fetch)
-                (uri (git-reference
-                      (url "https://gitlab.com/spritely/guile-hoot.git")
-                      (commit commit)))
-                (sha256
-                 (base32
-                  "0d6bsl3yygsfjrk9mmxkyq9lfcci3z6kk58cs2blqn8j13ydz51s"))))
+                              "-1.git" ;; (string-take commit 7)
+                              ))
+      (source
+       ;; (origin
+       ;;   (method git-fetch)
+       ;;   (uri (git-reference
+       ;;         (url "https://gitlab.com/spritely/guile-hoot.git")
+       ;;         (commit commit)))
+       ;;   (sha256
+       ;;    (base32
+       ;;     "0d6bsl3yygsfjrk9mmxkyq9lfcci3z6kk58cs2blqn8j13ydz51s")))
+       (local-file %source-dir
+                   #:recursive? #t
+                   #:select? (git-predicate %source-dir))
+       )
       (arguments
        '(#:tests? #f)))))
 
