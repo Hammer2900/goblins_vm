@@ -1038,7 +1038,7 @@ If a custom sealer triplet is provided to the returned
 @strong{Deprecation Warning}: The selfish-spawn module is deprecated
 and will be removed in a future version. Please use
 @code{define-actor} along with the @code{#:self} keyword to have
-selfish actors. @xref{define-actor}.
+selfish actors. @xref{Object construction}.
 
 The @code{(goblins actor-lib selfish-spawn)} module provides a
 @code{spawn}-like procedure which spawns objects able to reference
