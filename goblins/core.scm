@@ -126,7 +126,10 @@
             spawn-promise-values
 
             ;; For tests
-            mactor:local-link?)
+            mactor:local-link?
+
+            ;; For Hoot
+            mactor:object-self-portrait)
 
   #:replace (spawn)
   #:use-module (srfi srfi-9)
