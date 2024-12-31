@@ -957,8 +957,8 @@
                        ;; Keys are vat connector procedures, so compare
                        ;; vat names.
                        (lambda (a b)
-                         (string< (symbol->string ((car a) 'name))
-                                  (symbol->string ((car b) 'name))))))))))
+                         (string<? (symbol->string ((car a) 'name))
+                                   (symbol->string ((car b) 'name))))))))))
 
  ;; Running this test last since it messes with the log size.
  (test-assert "The event log can be resized"
