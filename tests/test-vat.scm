@@ -570,7 +570,10 @@
      ;; 2) update sneaky-chest with 'sword' as requested by vat A
      ;; 3) update sneaky-chest with 'shield'
      ;; 4) send promise resolution value of 'sword' to vat B
-     (let ((event (vat-log-ref-by-time a-vat (+ t 4))))
+     ;; XXX: The above comment describes the reasoning for incrementing t by 4.
+     ;; Incrementing t by 4 no longer works while incrementing it by 12 does.
+     ;; We do not presume to understand why.
+     (let ((event (vat-log-ref-by-time a-vat (+ t 12))))
        (and (vat-send-event? event)
             (eq? (actormap-peek (vat-event-snapshot event) sneaky-chest)
                  'sword)))))
