@@ -225,6 +225,29 @@ Type: Any -> Boolean"
 (define (transactormap-merged? transactormap)
   (transactormap-data-merged? (actormap-data transactormap)))
 
+;; Sleepymaps (persistable sleepy actors)
+;; ======================================
+
+(define-record-type <sleepymap>
+  (make-sleepymap store env cache-wht persist-strategy churn-number
+                  when-accessed when-updated)
+  sleepymap?
+  (store sleepymap-store)
+  (env sleepymap-env)
+  (cache-wht sleepymap-cache-wht)
+  (persist-strategy sleepymap-persist-strategy)
+  (churn-number sleepymap-churn-number)
+  ;; Weak hashtable of refr => churn-number of when "accessed" last
+  (when-accessed sleepymap-when-accessed))
+
+;; Simple strategies for sleepiness:
+;;  - Always sleep after every churn and only keep the cache "hot" for the
+;;    current churn
+;;  - Sleep actors if they haven't been accessed every X churns
+;;
+;; Eventually we'd want to "know" about upcoming messages so we don't put
+;; actors to sleep which we know are going to be messaged soon
+
 ;; Ref(r)s
 ;; =======
 
