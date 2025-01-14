@@ -18,6 +18,7 @@
   #:use-module (srfi srfi-1)
   #:use-module ((goblins core) #:hide ($))
   #:use-module ((goblins core) #:select ($) #:prefix $)
+  #:use-module (goblins core-types)
   #:export (methods extend-methods))
 
 (define-syntax expand-method-defn

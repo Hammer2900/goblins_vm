@@ -12,19 +12,18 @@
 ;;; See the License for the specific language governing permissions and
 ;;; limitations under the License.
 
-(define-module (tests actor-lib io)
-  #:use-module (goblins core)
-  #:use-module (goblins vat)
-  #:use-module (goblins actor-lib io)
-  #:use-module (goblins actor-lib joiners)
-  #:use-module (srfi srfi-64)
-  #:use-module (ice-9 match)
-  #:use-module (ice-9 textual-ports)
-  #:use-module (tests utils)
-  #:use-module (fibers channels)
-  #:use-module (fibers conditions)
-  #:use-module (fibers operations)
-  #:use-module (fibers timers))
+(use-modules (goblins core)
+             (goblins vat)
+             (goblins actor-lib io)
+             (goblins actor-lib joiners)
+             (srfi srfi-64)
+             (ice-9 match)
+             (ice-9 textual-ports)
+             (tests utils)
+             (fibers channels)
+             (fibers conditions)
+             (fibers operations)
+             (fibers timers))
 
 (test-begin "test-io")
 

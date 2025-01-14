@@ -13,12 +13,11 @@
 ;;; See the License for the specific language governing permissions and
 ;;; limitations under the License.
 
-(define-module (tests actor-lib simple-mint)
-  #:use-module (goblins core)
-  #:use-module (goblins actor-lib simple-mint)
-  #:use-module (tests utils)
-  #:use-module (srfi srfi-11)
-  #:use-module (srfi srfi-64))
+(use-modules (goblins core)
+             (goblins actor-lib simple-mint)
+             (tests utils)
+             (srfi srfi-11)
+             (srfi srfi-64))
 
 (test-begin "test-simple-mint")
 

@@ -16,6 +16,7 @@
 
 (define-module (goblins actor-lib nonce-registry)
   #:use-module (goblins core)
+  #:use-module (goblins core-types)
   #:use-module (goblins define-actor)
   #:use-module (goblins ghash)
   #:use-module (goblins actor-lib methods)

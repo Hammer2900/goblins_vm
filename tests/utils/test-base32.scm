@@ -12,11 +12,10 @@
 ;;; See the License for the specific language governing permissions and
 ;;; limitations under the License.
 
-(define-module (tests utils base32)
-  #:use-module (goblins utils base32)
-  #:use-module (rnrs bytevectors)
-  #:use-module (ice-9 iconv)
-  #:use-module (srfi srfi-64))
+(use-modules (goblins utils base32)
+             (rnrs bytevectors)
+             (ice-9 iconv)
+             (srfi srfi-64))
 
 (test-begin "test-base32")
 

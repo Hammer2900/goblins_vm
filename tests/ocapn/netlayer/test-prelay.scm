@@ -13,19 +13,19 @@
 ;;; See the License for the specific language governing permissions and
 ;;; limitations under the License.
 
-(define-module (tests ocapn netlayer test-prelay)
-  #:use-module (goblins core)
-  #:use-module (goblins vat)
-  #:use-module (goblins ocapn captp)
-  #:use-module (goblins ocapn ids)
-  #:use-module (goblins ocapn netlayer fake)
-  #:use-module (goblins ocapn netlayer prelay)
-  #:use-module (goblins actor-lib facet)
-  #:use-module (tests utils)
-  #:use-module (fibers)
-  #:use-module (fibers channels)
-  #:use-module (ice-9 match)
-  #:use-module (srfi srfi-64))
+(use-modules (goblins core)
+             (goblins core-types)
+             (goblins vat)
+             (goblins ocapn captp)
+             (goblins ocapn ids)
+             (goblins ocapn netlayer fake)
+             (goblins ocapn netlayer prelay)
+             (goblins actor-lib facet)
+             (tests utils)
+             (fibers)
+             (fibers channels)
+             (ice-9 match)
+             (srfi srfi-64))
 
 (test-begin "test-prelay")
 

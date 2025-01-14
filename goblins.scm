@@ -109,6 +109,7 @@
 
   (import (guile)
           (goblins core)
+          (goblins core-types)
           (goblins vat)
           (goblins define-actor)
           (goblins migrations))

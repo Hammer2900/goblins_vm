@@ -76,7 +76,39 @@
       (format port "<?xml version=\"1.0\" encoding=\"UTF-8\" ?>\n")
       (sxml->xml combined-xml port))))
 
+(define (hoot-flag? str)
+  (string=? str "--hoot"))
+
+(define (hoot-async-flag? str)
+  (string=? str "--hoot-async"))
+
 (match (command-line)
+  ;; TODO
+  ;; * combine async and regular tests somehow
+  ;; * proper Hoot test driver with a custom test-runner object etc
+  [(_ (? hoot-flag?) tests ...)
+   (for-each
+    (lambda (test-name)
+      (system* "guild" "compile-wasm"
+               "--run=node"
+               ;; FIXME: we ideally shouldn't be using relative paths
+               "-L" "../guile/module"
+               "-L" "hoot-modules"
+               "-L" "."
+               test-name))
+    tests)]
+  [(_ (? hoot-async-flag?) tests ...)
+   (for-each
+    (lambda (test-name)
+      (system* "guild" "compile-wasm"
+               "--run=node" "--async"
+               "--user-imports=hoot-ffi/crypto.js"
+               ;; FIXME: we ideally shouldn't be using relative paths
+               "-L" "../guile/module"
+               "-L" "hoot-modules"
+               "-L" "."
+               test-name))
+    tests)]
   [(_ tests ...)
    (par-for-each
     (lambda (test-name)
@@ -92,7 +124,7 @@
                  "guile"
                  "-L" "."
                  test-name)))
-      tests)
+    tests)
 
    ;; Now build the combined junit file.
    (let* ((xml-files (map (lambda (filename) (replace-file-extension filename ".xml")) tests))

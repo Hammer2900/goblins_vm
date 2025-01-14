@@ -13,13 +13,12 @@
 ;;; See the License for the specific language governing permissions and
 ;;; limitations under the License.
 
-(define-module (tests actor-lib test-facet)
-  #:use-module (goblins core)
-  #:use-module (goblins define-actor)
-  #:use-module (goblins actor-lib facet)
-  #:use-module (tests utils)
-  #:use-module (ice-9 match)
-  #:use-module (srfi srfi-64))
+(use-modules (goblins core)
+             (goblins define-actor)
+             (goblins actor-lib facet)
+             (tests utils)
+             (ice-9 match)
+             (srfi srfi-64))
 
 (test-begin "test-facet")
 

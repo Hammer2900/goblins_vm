@@ -17,6 +17,7 @@
   #:use-module (srfi srfi-1)
   #:use-module (ice-9 vlist)
   #:use-module (goblins core)
+  #:use-module (goblins core-types)
   #:use-module (goblins define-actor)
   #:use-module (goblins ghash)
   #:use-module (goblins actor-lib methods)
