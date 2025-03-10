@@ -248,18 +248,37 @@ Display a list of vats."
 (define (maybe-lookup-vat x)
   (if (vat? x) x (lookup-vat x)))
 
+(define-meta-command ((spawn-vat goblins) repl exp #:key name log? force?)
+  "spawn-vat VAR-NAME [#:name] [#:log?] [#:force?]
+Spawn and assign a vat to the variable defined by the symbol VAR-NAME, then enter it. If #:force is #t, a pre-existing variable will be redefined."
+  (with-goblins-error-messages
+   (let* ((mod (current-module))
+          (var-name (repl-eval repl exp)))
+     (if (symbol? var-name)
+         (let ((vat-var (module-variable mod var-name)))
+           (if (and (variable? vat-var) (not force?))
+               (repl-error (format #f "Vat already defined: ~s. Use ,enter-vat instead, or #:force? #t to redefine the vat." var-name))
+               (let ((vat (spawn-vat #:name name #:log? log?)))
+                 (module-add! mod var-name (make-variable vat))
+                 (%enter-vat repl vat))))
+         (repl-error (format #f "VAR-NAME must be a symbol."))))))
+
+(define (%enter-vat repl vat)
+  (with-goblins-error-messages
+   (parameterize ((current-vat vat))
+     (format #t "Entering vat '~a'.  Type ',q' to exit.  Type ',help goblins' for help.\n"
+             (or (vat-name vat) (vat-id vat)))
+     (start-interpreted-repl
+      (make-goblins-language vat)))))
+
 (define-meta-command ((enter-vat goblins) repl exp)
   "enter-vat vat
 Enter a sub-REPL where all expressions are evaluated within VAT."
-  (with-goblins-error-messages
-   (let ((vat (maybe-lookup-vat (repl-eval repl exp))))
-     (if (vat? vat)
-         (parameterize ((current-vat vat))
-           (format #t "Entering vat '~a'.  Type ',q' to exit.  Type ',help goblins' for help.\n"
-                   (or (vat-name vat) (vat-id vat)))
-           (start-interpreted-repl
-            (make-goblins-language vat)))
-         (repl-error (format #f "Not a vat: ~s" vat))))))
+  (let* ((vat-name-or-id (repl-eval repl exp))
+         (vat (maybe-lookup-vat vat-name-or-id)))
+    (if (vat? vat)
+        (%enter-vat repl vat)
+        (repl-error (format #f "Not a vat: ~s" vat-name)))))
 
 (define-meta-command ((vat-log-enable goblins) repl)
   "vat-log-enable
