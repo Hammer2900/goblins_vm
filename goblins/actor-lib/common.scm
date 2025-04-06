@@ -67,6 +67,8 @@ Methods:
 `set key val': Associate KEY with VAL.
 `has-key? key': Return #t if KEY is in the hashtable, else #f.
 `remove key': Delete KEY and its associated value.
+`keys': Return the list of all keys in the table.
+`values': Return the list of all values in the table.
 `data': Return the underlying hashtable."
   #:frozen
   (methods
@@ -82,6 +84,10 @@ Methods:
     (ghash-has-key? ht key)]
    [(remove key)
     (bcom (^ghash bcom (ghash-remove ht key)))]
+   [(keys)
+    (ghash-keys ht)]
+   [(values)
+    (ghash-values ht)]
    [(data) ht]))
 
 (define common-env
