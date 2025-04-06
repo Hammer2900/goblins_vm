@@ -44,6 +44,17 @@
             ghash-fold-right
             ghash-for-each
 
+            ghash-keys
+            ghash-values
+
+            ghash-fold-keys
+            ghash-fold-values
+            ghash-fold-right-keys
+            ghash-fold-right-values
+
+            ghash-for-each-keys
+            ghash-for-each-values
+
             hash-table->ghash
 
             make-gset
@@ -132,12 +143,50 @@
 (define (ghash-fold-right proc init ghash)
   (vhash-fold-right proc init (ghash-vhash ghash)))
 
+(define (ghash-fold-keys proc init ghash)
+  (ghash-fold
+   (lambda (k _v p)
+     (proc k p))
+   init ghash))
+(define (ghash-fold-values proc init ghash)
+  (ghash-fold
+   (lambda (_k v p)
+     (proc v p))
+   init ghash))
+(define (ghash-fold-right-keys proc init ghash)
+  (ghash-fold-right
+   (lambda (k _v p)
+     (proc k p))
+   init ghash))
+(define (ghash-fold-right-values proc init ghash)
+  (ghash-fold-right
+   (lambda (_k v p)
+     (proc v p))
+   init ghash))
+
 (define (ghash-for-each proc ghash)
   (vhash-fold
    (lambda (k v _p)
      (proc k v))
    #f
    (ghash-vhash ghash)))
+
+(define (ghash-for-each-keys proc ghash)
+  (ghash-for-each
+   (lambda (k _v)
+     (proc k))
+   ghash))
+(define (ghash-for-each-values proc ghash)
+  (ghash-for-each
+   (lambda (_k v)
+     (proc v))
+   ghash))
+
+(define (ghash-keys ghash)
+  (ghash-fold-keys cons '() ghash))
+
+(define (ghash-values ghash)
+  (ghash-fold-values cons '() ghash))
 
 (define (hash-table->ghash table)
   (_make-ghash

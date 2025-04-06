@@ -34,14 +34,17 @@
 (test-equal #f (ghash-ref gh1 'nonsense))
 (test-equal 'some-dflt (ghash-ref gh1 'nonsense 'some-dflt))
 
+(test-equal '(key1 key2) (ghash-keys gh1))
+(test-equal '(val1 val2) (ghash-values gh1))
+
 (test-equal
-  (ghash-fold
-   (lambda (k v p)
-     (cons (list (symbol->string k)
-                 (symbol->string v))
-           p))
-   '()
-   gh1)
+    (ghash-fold
+     (lambda (k v p)
+       (cons (list (symbol->string k)
+                   (symbol->string v))
+             p))
+     '()
+     gh1)
   '(("key1" "val1") ("key2" "val2")))
 
 (define gh2
