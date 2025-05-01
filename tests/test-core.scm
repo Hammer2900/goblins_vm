@@ -613,6 +613,24 @@
  '((got-err yikes) #t)
  (try-promise-to-promise 'break 'yikes))
 
+;; It's not that we want *unspecified*, it's that we want things to not break.
+;; But since we currently return *unspecified* in the zero values case, let's
+;; test for that. This test could change in the future when multiple value
+;; return is actually supported.
+(test-equal "On handlers returning zero values return *unspecified* instead"
+  *unspecified*
+  (let ((result '*no-result-yet*))
+    (actormap-churn-run!
+     am
+     (lambda ()
+       (define hopefully-unspecified-vow
+         (on 'no-op (lambda _ (values))
+             #:promise? #t))
+       (on hopefully-unspecified-vow
+           (lambda (hopefully-unspecified)
+             (set! result hopefully-unspecified)))))
+    result))
+
 ;; object persistence tests
 (define* (^incrementer bcom #:optional [value 0])
   (define (main-beh)

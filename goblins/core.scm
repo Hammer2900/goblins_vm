@@ -1806,7 +1806,13 @@ Type: Promise (Optional (Any -> Any))
           proc-name
           (lambda (bcom)
             (lambda args
-              (bcom already-ran (apply obj args))))))]
+              (bcom already-ran
+                    (call-with-values (lambda ()
+                                        (apply obj args))
+                      (case-lambda
+                        (() *unspecified*)
+                        ((val) val)
+                        (vals (error "Multiple values returned form on handler:" vals)))))))))]
       ;; If it's #f, leave it as #f
       [#f #f]
       ;; Otherwise, this doesn't belong here
