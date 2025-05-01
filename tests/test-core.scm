@@ -179,6 +179,16 @@
 (test-equal 2 (actormap-poke! am a-ctr))
 (test-equal 3 (actormap-peek am a-ctr))
 
+;; Verify that zero values can be returned from an actor without it panicking
+(define (^returns-zero _bcom)
+  (lambda _ (values)))
+(define returns-zero
+  (actormap-spawn! am ^returns-zero))
+(test-eq "Returning zero values from actor returns *unspecified* instead of breaking"
+  *unspecified*
+  (actormap-peek am returns-zero))
+
+
 (define (^spawns-during-constructor bcom)
   (define a-cell
     (spawn ^cell 'foo))

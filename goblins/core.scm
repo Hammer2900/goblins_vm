@@ -1010,7 +1010,14 @@ Type: Any -> Boolean"
            (become-unsealer
             (mactor:object-become-unsealer mactor)))
        (define (_do-actor-call)
-         (apply actor-behavior args))
+         (call-with-values
+             (lambda ()
+               (apply actor-behavior args))
+           (case-lambda
+             (() *unspecified*)
+             ((val) val)
+             (vals
+              (error "Multiple value return not supported in Goblins yet. Values:" vals)))))
        (define (_handle-await k fulfill-proc promise?)
          (define-values (waiting-promise waiting-resolver)
            (_spawn-promise-and-resolver))
