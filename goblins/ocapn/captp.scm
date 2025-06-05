@@ -498,16 +498,13 @@
           [else
            (error 'captp-to-wrong-node)]))]))
 
-  (define (install-answer! answer-pos resolve-me-desc)
-    (define resolve-me
-      (maybe-install-import! resolve-me-desc))
+  (define (install-answer! answer-pos)
     (when (hashv-ref answers answer-pos)
       (error 'already-have-answer
              "~a" answer-pos))
     (let-values (((answer-promise answer-resolver)
                  (spawn-promise-and-resolver)))
       (hashv-set! answers answer-pos answer-promise)
-      (listen-to answer-promise resolve-me)
       (values answer-promise answer-resolver)))
 
   ;; Resolvers that are interested in when we're tearing down
@@ -544,47 +541,25 @@
         (error 'captp-breakage "Captp session is no longer running but got ~a"
                msg))
       (match msg
-        ;; TODO: Handle case where the target doesn't exist?
-        ;;   Or maybe just generally handle unmarshalling errors :P
-        [($ <op:deliver-only> to-desc args-marshalled)
-         (let*-values (((args)
-                        (incoming-post-unmarshall! args-marshalled))
-                       ((target) (unmarshall-to-desc to-desc)))
-           (apply <-np target args)
-           *unspecified*)]
         [($ <op:deliver> to-desc
                          args-marshalled
                          ;; answer-pos is either an integer (promise pipelining)
                          ;; or #f (no pipelining)
                          (and (or (? integer?) #f)
-                              answer-pos)
-                         resolve-me-desc)
+                              answer-pos))
          (define (do-it)
            (define args
              (incoming-post-unmarshall! args-marshalled))
            (define target (unmarshall-to-desc to-desc))
-           (define sent-promise
-             (apply <- target args))
-           ;; We're either resolving the to the answer promise we create
-           ;; or we're resolving to the actual object described by resolve-me-desc
-           ;;
-           ;; The former case is an indirection because messages pipelined
-           ;; to a to-be-answered object are simply sent to a local promise
-           ;; which will eventually resolve to the answer.
-           ;;
-           ;; It's possible that something more efficient could be done
-           ;; than throwing in an intermediate promise pair that we inform the
-           ;; other side of; maybe re-evaluate when we handle
-           ;; automatic-severance-on-session-disconnect.
-           (cond
-            [answer-pos
-             (let-values (((_answer-promise answer-resolver)
-                           (install-answer! answer-pos resolve-me-desc)))
-               ($$ answer-resolver 'fulfill sent-promise))]
-            [else
-             (let ((to-resolve
-                    (maybe-install-import! resolve-me-desc)))
-               (<-np to-resolve 'fulfill sent-promise))])
+           ;; The op:deliver is either without expecting an answer (<-np) or
+           ;; with an answer position, the answer position specifies where the
+           ;; answer should live. This will be either promise pipelined or
+           ;; listened to (using op:listen) later, or even both!
+           (if (integer? answer-pos)
+               (let-values (((answer-promise answer-resolver)
+                              (install-answer! answer-pos)))
+                 ($$ answer-resolver 'fulfill (apply <- target args)))
+               (apply <-np target args))
            *unspecified*)
          (do-it)]
 
@@ -598,7 +573,7 @@
         ;; Actually the easiest thing to do here would be to create our own
         ;; promise-resolver pair, right here, at the captp perimeter, which
         ;; pipelines the result.
-        [($ <op:listen> (? desc:export? to-desc)
+        [($ <op:listen> (and (or (? desc:export?) (? desc:answer?)) to-desc)
                         (? desc:import? listener-desc)
                         (? boolean? wants-partial?))
          (let ((to-refr
@@ -626,23 +601,33 @@
       (define (running-handle-cmd cmd)
         (match cmd
           [($ <cmd-send-message> msg)
-           (define-values (real-msg answer-pos)
+           (define-values (real-msg answer-pos answer-this-question)
              (match msg
                [(? message?)
-                (values msg #f)]
+                (values msg #f #f)]
                [($ <questioned> msg answer-this-question)
-                (values msg (hashq-ref questions answer-this-question))]))
+                (values msg (hashq-ref questions answer-this-question)
+                            answer-this-question)]))
            (match-let ((($ <message> _ to resolve-me args)
                         real-msg))
+
              (define deliver-msg
                (if resolve-me
                    (op:deliver (marshall-to to)
                                (outgoing-pre-marshall! args)
-                               answer-pos
-                               (marshall-local-refr! resolve-me))
-                   (op:deliver-only (marshall-to to)
-                                    (outgoing-pre-marshall! args))))
-             (send-to-remote deliver-msg))]
+                               answer-pos)
+                   (op:deliver (marshall-to to)
+                               (outgoing-pre-marshall! args)
+                               #f)))
+             (send-to-remote deliver-msg)
+             ;; TODO: eventually remove this, just for temp
+             (when answer-this-question
+               (send-to-remote
+                (op:listen (marshall-to answer-this-question)
+                           (outgoing-pre-marshall! resolve-me)
+                           #f)))
+
+             )]
           [($ <cmd-send-listen> (? remote-refr? to-refr) (? local-refr? listener-refr)
                                 (? boolean? wants-partial?))
            (let ((listen-msg

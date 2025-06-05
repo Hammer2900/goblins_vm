@@ -30,12 +30,6 @@
             captp-session-severed
             captp-session-severed?
 
-            <op:deliver-only>
-            op:deliver-only
-            op:deliver-only?
-            op:deliver-only-to-desc
-            op:deliver-only-args
-
             <op:deliver>
             op:deliver
             op:deliver?
@@ -185,29 +179,15 @@
 
 ;;; Messages
 
-;; Queue a delivery of verb(args..) to recip, discarding the outcome.
-(define-syrup-record-type <op:deliver-only>
-  (op:deliver-only to-desc args)
-  op:deliver-only?
-  op:deliver-only marshall::op:deliver-only unmarshall::op:deliver-only
-  ;; Position in the table for the target
-  ;; (sender's imports, reciever's exports)
-  (to-desc op:deliver-only-to-desc)
-   ;; Either arguments to the method or to the procedure, depending
-   ;; on whether method exists
-  (args op:deliver-only-args))
-
-;; Queue a delivery of verb(args..) to recip, binding answer/rdr to the outcome.
+;; Queue a delivery of verb(args..) to recip.
 (define-syrup-record-type <op:deliver>
-  (op:deliver to-desc args answer-pos resolve-me-desc)
+  (op:deliver to-desc args answer-pos)
   op:deliver?
   op:deliver marshall::op:deliver unmarshall::op:deliver
 
   (to-desc op:deliver-to-desc)
   (args op:deliver-args)
-  (answer-pos op:deliver-answer-pos)
-  ;; a resolver, probably an import (though it could be a handoff)
-  (resolve-me-desc op:deliver-resolve-me-desc))
+  (answer-pos op:deliver-answer-pos))
 
 (define-syrup-record-type <op:abort>
   (op:abort reason)
@@ -343,8 +323,7 @@
 ;; TODO: 3 vat/node handoff versions (Promise3Desc, Far3Desc)
 
 (define marshallers
-  (list marshall::op:deliver-only
-        marshall::op:deliver
+  (list marshall::op:deliver
         marshall::op:abort
         marshall::op:listen
         marshall::op:gc-export
@@ -362,8 +341,7 @@
         marshall::ocapn-sturdyref))
 
 (define unmarshallers
-  (list unmarshall::op:deliver-only
-        unmarshall::op:deliver
+  (list unmarshall::op:deliver
         unmarshall::op:abort
         unmarshall::op:listen
         unmarshall::op:gc-export

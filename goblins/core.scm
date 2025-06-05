@@ -1311,7 +1311,8 @@ Type: Any -> Boolean"
               ;; preserve FIFO by recursing first
               (send-rest rest-waiting)
               ;; and then send this message along
-              (syscaller-send-message syscaller resolve-to-val resolve-me args))])))
+              (let ((vow (syscaller-<- syscaller resolve-to-val args)))
+                ($ resolve-me 'fulfill vow)))])))
 
      (define new-waiting-messages
        (if (remote-promise-refr? resolve-to-val)
