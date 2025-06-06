@@ -176,6 +176,7 @@
   (define imports (make-weak-value-hash-table)) ; (eqv) imports:        chosen by peer
   (define questions (make-weak-key-hash-table)) ; (eq)  questions:      chosen by us
   (define answers (make-hash-table))            ; (eqv) answers:        chosen by peer
+  (define questions->promise-info (make-weak-key-hash-table))
 
   ;; TODO: This should really be some kind of box that the other side
   ;;   can query, right?
@@ -518,6 +519,7 @@
     (set! questions #f)
     (set! answers #f)
     (set! running? #f)
+    (set! questions->promise-info #f)
     (captp-gc-halt! captp-gc)
     (set! shutdown-reason (list shutdown-type reason))
     (for-each
@@ -608,6 +610,8 @@
                [($ <questioned> msg answer-this-question)
                 (values msg (hashq-ref questions answer-this-question)
                             answer-this-question)]))
+           (define-values (deliver-vow deliver-resolver)
+             (spawn-promise-and-resolver))
            (match-let ((($ <message> _ to resolve-me args)
                         real-msg))
 
@@ -620,21 +624,45 @@
                                (outgoing-pre-marshall! args)
                                #f)))
              (send-to-remote deliver-msg)
-             ;; TODO: eventually remove this, just for temp
-             (when answer-this-question
-               (send-to-remote
-                (op:listen (marshall-to answer-this-question)
-                           (outgoing-pre-marshall! resolve-me)
-                           #f)))
-
-             )]
-          [($ <cmd-send-listen> (? remote-refr? to-refr) (? local-refr? listener-refr)
+             (let ((promise-info (list deliver-vow deliver-resolver #f)))
+               (hashq-set! questions->promise-info answer-this-question promise-info)))]
+          ;; TODO: This will be an answer-pos
+          [($ <cmd-send-listen> (? question-finder? answer-this-question)
+                                (? local-refr? listener-refr)
                                 (? boolean? wants-partial?))
-           (let ((listen-msg
-                  (op:listen (marshall-to to-refr)
-                             (outgoing-pre-marshall! listener-refr)
-                             wants-partial?)))
-             (send-to-remote listen-msg))]
+           ;; We should only send one listen request per question we've asked,
+           ;; look to see if we've seen it already.
+           ;; TODO: We can either do wants-partial? true for all requests or
+           ;; none. We currently are doing all, is that right?
+           (define (register-interest! vow)
+             ;; Is this messed up? - doing it so the listener
+             ;; doesn't get fulfilled with a promisey value.
+             (on vow
+                 (lambda (resolution)
+                   (<-np listener-refr 'fulfill resolution))
+                 #:catch
+                 (lambda (err)
+                   (<-np listener-refr 'break err))))
+           (match (hashq-ref questions->promise-info answer-this-question)
+             ((vow resolver #t)
+              ;; Already sent a op:listen, just fulfill the listener to the vow.
+              (register-interest! vow))
+             ((vow resolver #f)
+              ;; Send the op:listen.
+              (send-to-remote (op:listen (marshall-to answer-this-question)
+                                         (outgoing-pre-marshall! resolver)
+                                         #t))
+              ;; Mark it as sent in the promise-info
+              (hashq-set! questions->promise-info answer-this-question
+                          (list vow resolver #t))
+              ;; Finally fulfill the promise with the vow.
+              (register-interest! vow)))]
+          [($ <cmd-send-listen> (? remote-refr? to-refr)
+                                (? local-refr? listener-refr)
+                                (? boolean? wants-partial?))
+           (send-to-remote (op:listen (marshall-to to-refr)
+                                      (outgoing-pre-marshall! listener-refr)
+                                      wants-partial?))]
           [($ <cmd-send-gc-answer> (? integer? answer-pos))
            (send-to-remote (op:gc-answer answer-pos))]
           [($ <cmd-send-gc-export> (? integer? export-pos) (? integer? wire-delta))

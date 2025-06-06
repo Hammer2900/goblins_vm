@@ -728,12 +728,13 @@ Type: Actormap -> TransActormap"
   (resolver-unsealer m~eventual-resolver-unsealer)
   (resolver-tm? m~eventual-resolver-tm?))
 (define-record-type <m~unresolved>
-  (make-m~unresolved eventual listeners)
+  (make-m~unresolved eventual listeners eager?)
   m~unresolved?
   ;; the <m~eventual> info
   (eventual m~unresolved-eventual)
   ;; Who's listening for a resolution?
-  (listeners m~unresolved-listeners))
+  (listeners m~unresolved-listeners)
+  (eager? m~unresolved-eager?))
 
 ;; The most common kind of freshly made promise is a naive one.
 ;; It knows no interesting information about how what it will eventually
@@ -845,14 +846,15 @@ Type: Actormap -> TransActormap"
   (define unresolved (mactor-get-m~unresolved mactor))
   (m~unresolved-listeners unresolved))
 
-(define (mactor:unresolved-add-listener mactor new-listener wants-partial?)
+(define (mactor:unresolved-add-listener mactor new-listener wants-partial? eager?)
   (define new-listener-info
     (make-listener-info new-listener wants-partial?))
   (define old-unresolved (mactor-get-m~unresolved mactor))
   (define new-unresolved
     (make-m~unresolved (m~unresolved-eventual old-unresolved)
                        (cons new-listener-info
-                             (m~unresolved-listeners old-unresolved))))
+                             (m~unresolved-listeners old-unresolved))
+                       (or eager? (m~unresolved-eager? old-unresolved))))
   (match mactor
     [(? mactor:naive?)
      (make-mactor:naive new-unresolved
@@ -972,12 +974,13 @@ Type: Any -> Boolean"
 
 ;; Sent in the same way as <message>, but does listen requests specifically
 (define-record-type <listen-request>
-  (make-listen-request from-vat to listener wants-partial?)
+  (make-listen-request from-vat to listener wants-partial? eager?)
   listen-request?
   (from-vat listen-request-from-vat)
   (to listen-request-to)
   (listener listen-request-listener)
-  (wants-partial? listen-request-wants-partial?))
+  (wants-partial? listen-request-wants-partial?)
+  (eager? listen-request-eager?))
 
 ;; This kluge is for when we need to forward a message to captp... but
 ;; typically also it might have a question-finder for the `to' field...
@@ -1304,7 +1307,6 @@ Type: Any -> Boolean"
        (let send-rest ([waiting-messages orig-waiting-messages])
          (match waiting-messages
            ['() *unspecified*]
-           ;; TODO: add support for <questioned> here, right?!?!
            [((? message? msg) rest-waiting ...)
             (let ((resolve-me (message-resolve-me msg))
                   (args (message-args msg)))
@@ -1383,9 +1385,12 @@ Type: Any -> Boolean"
                         [(new-resolver)
                          (syscaller-spawn syscaller ^resolver
                                           (list promise-id new-resolver-sealer)
-                                          '^resolver)])
+                                          '^resolver)]
+                        [(eager?)
+                         (m~unresolved-eager? (mactor-get-m~unresolved orig-mactor))])
             ;; Now subscribe to the promise...
-            (syscaller-send-listen syscaller resolve-to-val new-resolver #t)
+            (syscaller-send-listen syscaller resolve-to-val new-resolver #t
+                                   #:eager? eager?)
             (let* ([new-listeners
                     ;; inform those who want partial resolution and gather those who don't
                     (let lp ([listeners orig-listeners]
@@ -1408,7 +1413,8 @@ Type: Any -> Boolean"
                    [new-eventual (make-m~eventual new-resolver-unsealer
                                                   new-resolver-tm?)]
                    [new-unresolved (make-m~unresolved new-eventual
-                                                      new-listeners)])
+                                                      new-listeners
+                                                      eager?)])
               ;; Now we become "closer" to this promise
               (make-mactor:closer new-unresolved
                                   resolve-to-val new-history
@@ -1674,16 +1680,19 @@ Type: Any -> Boolean"
             "Don't know how to send a message to:" to-refr)]))
 
 (define* (syscaller-send-listen syscaller to-refr listener
-                                #:optional [wants-partial? #f])
+                                #:optional
+                                [wants-partial? #f]
+                                #:key
+                                [eager? #f])
   (define vat-connector (syscaller-vat-connector syscaller))
   (match to-refr
     [(? live-refr?)
      (let ([listen-req
-            (make-listen-request vat-connector to-refr listener wants-partial?)])
+            (make-listen-request vat-connector to-refr listener wants-partial? eager?)])
        (syscaller-queue-new-msg! syscaller listen-req))]
     [val (syscaller-<-np syscaller listener (list 'fulfill val))]))
 
-(define (syscaller-handle-listen syscaller to-refr listener wants-partial?)
+(define (syscaller-handle-listen syscaller to-refr listener wants-partial? eager?)
   #;(define (handle-exn err)
   (when display-or-log-error
   (display-or-log-error err while-handling-listen-header))
@@ -1695,6 +1704,14 @@ Type: Any -> Boolean"
       (error 'not-a-near-refr "Not a near refr:" to-refr))
     (define mactor
       (actormap-ref-or-die actormap to-refr))
+
+    (define (add-listener-to-unresolved-mactor!)
+      ;; Set a new version of the local-promise with this
+      ;; object as a listener
+      (actormap-set! actormap to-refr
+                     (mactor:unresolved-add-listener mactor listener
+                                                     wants-partial?
+                                                     eager?)))
     (match mactor
       [(? mactor:local-link?)
        (let ((point-to
@@ -1702,15 +1719,28 @@ Type: Any -> Boolean"
          (if (near-refr? point-to)
              (syscaller-handle-listen syscaller
                                       (mactor:local-link-point-to mactor)
-                                      listener wants-partial?)
-             (syscaller-send-listen syscaller point-to listener wants-partial?)))]
+                                      listener wants-partial? eager?)
+             (syscaller-send-listen syscaller point-to listener wants-partial?
+                                    #:eager? eager?)))]
+      ;; Promise for a message sent over CapTP
+      [(? mactor:question?)
+       ;; We need to work with CapTP to get informed of the resolution. It
+       ;; may need to emit an op:listen if it's the first time someone's
+       ;; been interested in the result.
+       (when eager?
+         (let ((to-question-finder (mactor:question-question-finder mactor))
+               (captp-connector (mactor:question-captp-connector mactor))
+               (vat-connector (syscaller-vat-connector syscaller)))
+           (syscaller-queue-new-msg!
+            syscaller
+            (make-forward-to-captp
+             (make-listen-request vat-connector to-question-finder
+                                  listener wants-partial? eager?)
+             captp-connector))))
+       (add-listener-to-unresolved-mactor!)]
       ;; This object is a local promise, so we should handle it.
       [(? mactor:unresolved?)
-       ;; Set a new version of the local-promise with this
-       ;; object as a listener
-       (actormap-set! actormap to-refr
-                      (mactor:unresolved-add-listener mactor listener
-                                                      wants-partial?))]
+       (add-listener-to-unresolved-mactor!)]
       ;; In the following cases we can resolve the listener immediately...
       [(? mactor:broken? mactor)
        (syscaller-<-np syscaller listener (list 'break (mactor:broken-problem mactor)))]
@@ -1783,7 +1813,7 @@ Type: Any -> Boolean"
        *unspecified*]))
   (define listener
     (syscaller-spawn syscaller ^on-listener '() '^on-listener))
-  (syscaller-send-listen syscaller on-refr listener)
+  (syscaller-send-listen syscaller on-refr listener #:eager? #t)
   (when promise?
     return-promise))
 
@@ -1894,14 +1924,14 @@ Type: Actor Any ... -> Void"
 
 
 ;; Listen to a promise
-(define* (listen-to to-refr listener #:key [wants-partial? #f])
+(define* (listen-to to-refr listener #:key [wants-partial? #f] [eager? #f])
   "Wait for TO-REFR to resolve then inform LISTENER. If WANTS-PARTIAL?
 is #t, return updates rather than waiting for full promise resolution.
 Return nothing.
 
 Type: Promise Actor -> Void"
   (define sys (get-syscaller-or-die))
-  (syscaller-send-listen sys to-refr listener wants-partial?))
+  (syscaller-send-listen sys to-refr listener wants-partial? #:eager? eager?))
 
 (define* (on vow #:optional (fulfilled-handler #f)
              #:key
@@ -2044,7 +2074,7 @@ Type: Promise (Optional (Any -> Any))
   (define m-eventual
     (make-m~eventual unsealer tm?))
   (define m-unresolved
-    (make-m~unresolved m-eventual '()))
+    (make-m~unresolved m-eventual '() #f))
   (define promise
     (let ((new-mactor
            (if question-finder
@@ -2386,7 +2416,8 @@ Type: Actormap Message (Optional (#:error-handler (Exception -> Any)))
             (syscaller-handle-listen sys
                                      (listen-request-to lr)
                                      (listen-request-listener lr)
-                                     (listen-request-wants-partial? lr))]))
+                                     (listen-request-wants-partial? lr)
+                                     (listen-request-eager? lr))]))
        (values `#(ok ,result) new-actormap (syscaller-new-msgs sys)))
      (if catch-errors?
          ;; We're catching errors?  Well, let's capture the stack without
