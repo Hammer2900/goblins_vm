@@ -848,10 +848,20 @@ Type: Vat -> Void"
     (call/ec
      (lambda (abort)
        (define (handle-error exn)
-         (define stack (capture-current-stack #t handle-error))
-         (display-backtrace* exn stack)
-         (newline (current-error-port))
-         (abort (handler exn)))
+         ;; Capture stack, trimming off the frames at and below the
+         ;; raise-exception call.
+         (let ((stack (capture-current-stack #t raise-exception))
+               (title "Exception in vat"))
+           (match (vat-name vat)
+             (#f
+              (format (current-error-port) "~a #~a:\n" title (vat-id vat)))
+             (name
+              (format (current-error-port) "~a `~a':\n" title name)))
+           (print-exception* stack exn)
+           (newline (current-error-port))
+           (display-backtrace* exn stack)
+           (newline (current-error-port))
+           (abort (handler exn))))
        (with-exception-handler handle-error thunk))))
   (define (churn-message msg sent-at)
     (define-values (returned new-actormap)
