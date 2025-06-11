@@ -734,6 +734,9 @@ Type: Actormap -> TransActormap"
   (eventual m~unresolved-eventual)
   ;; Who's listening for a resolution?
   (listeners m~unresolved-listeners)
+  ;; A promise starts out non-eager. It becomes eager when either
+  ;; it's listened to with `on', or when a promise listening to this
+  ;; promise in a chain itself becomes eager
   (eager? m~unresolved-eager?))
 
 ;; The most common kind of freshly made promise is a naive one.
@@ -854,6 +857,7 @@ Type: Actormap -> TransActormap"
     (make-m~unresolved (m~unresolved-eventual old-unresolved)
                        (cons new-listener-info
                              (m~unresolved-listeners old-unresolved))
+                       ;; once a promise is eager, it's always eager
                        (or eager? (m~unresolved-eager? old-unresolved))))
   (match mactor
     [(? mactor:naive?)
@@ -1727,6 +1731,10 @@ Type: Any -> Boolean"
        ;; We need to work with CapTP to get informed of the resolution. It
        ;; may need to emit an op:listen if it's the first time someone's
        ;; been interested in the result.
+       ;; (The case where we'd send messages here where we're listening and
+       ;; we're not being eager is promise pipelining, where we might
+       ;; not be interested in intermediate results. Eagerness only occurs
+       ;; once we listen with `on' somewhere in this promise's chain.)
        (when eager?
          (let ((to-question-finder (mactor:question-question-finder mactor))
                (captp-connector (mactor:question-captp-connector mactor))
