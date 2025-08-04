@@ -87,7 +87,9 @@
     (let*-values (((hints) (ocapn-peer-hints loc))
                   ((host) (hashmap-ref hints "host"))
                   ((port) (hashmap-ref hints "port")))
-      (make-client-socket host (string->number port))))
+      (spawn-fibrous-vow
+       (lambda ()
+         (make-client-socket host (string->number port))))))
 
   (define main-beh
     (^base-port-netlayer bcom our-location incoming-accept
