@@ -27,6 +27,11 @@
   #:use-module (fibers scheduler)
   #:export (^io ^read-write-io))
 
+(define (get-current-scheduler)
+  (cond-expand
+   (hoot #f)
+   (guile (current-scheduler))))
+
 ;; Not exported for now, but maybe someday it would be useful to export?
 (define* (run-wrapped wrapped #:key init cleanup)
   "Set up a fiber which processes commands for WRAPPED, a wrapped resource
@@ -39,7 +44,7 @@ Returns two values to its continuation:
    and a resolver to resolve a promise with the answer
  - STOP!: a thunk which halts the fiber"
   (define-values (enq-ch deq-ch stop-inbox?)
-    (spawn-delivery-agent #:scheduler (current-scheduler)))
+    (spawn-delivery-agent #:scheduler (get-current-scheduler)))
   (define (run-proc proc fulfill-me)
     (put-message enq-ch (cons proc fulfill-me)))
   (define (stop!)
