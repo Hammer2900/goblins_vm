@@ -306,9 +306,9 @@ the source file plus the line number for test."
             (trs (open-file (option 'trs-file "") "wl"))
             (xml (open-file (log-file->junit-xml-file (option 'log-file "")) "wl"))
             (out (duplicate-port (current-output-port) "wl")))
-        (redirect-port log (current-output-port))
-        (redirect-port log (current-warning-port))
-        (redirect-port log (current-error-port))
+        ;; (redirect-port log (current-output-port))
+        ;; (redirect-port log (current-warning-port))
+        ;; (redirect-port log (current-error-port))
         (test-with-runner
             (test-runner-gnu (option 'test-name #f)
                              #:color? (option->boolean opts 'color-tests)
