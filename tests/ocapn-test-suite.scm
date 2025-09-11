@@ -40,7 +40,7 @@
   (fcntl port F_SETFL (logior O_NONBLOCK (fcntl port F_GETFL))))
 (define (make-server-socket+port port max-connections)
   (let ((sock (socket AF_INET SOCK_STREAM IPPROTO_TCP)))
-    (bind sock AF_INET INADDR_ANY (or port 0))
+    (bind sock AF_INET INADDR_LOOPBACK (or port 0))
     (setsockopt sock SOL_SOCKET SO_REUSEADDR 1)
     (fcntl sock F_SETFD FD_CLOEXEC)
     (use-nonblocking-i/o sock)
