@@ -79,6 +79,7 @@
             actormap-replace-behavior!
             actormap-restore!
             actormap-restore-with-far-refrs!
+            actormap-restore-with-far-refrs!*
             actormap-restore-from-store!
             actormap-save-to-store!
 
@@ -2325,7 +2326,6 @@ Type: Actormap (-> Any) (Optional (#:reckless? Boolean)) -> Any"
         actormap-poke!))
   (apply values (actormap-poker! actormap actor-refr)))
 
-
 (define while-handling-header
   "While attempting to handle message")
 (define before-even-able-to-handle-header
@@ -2685,15 +2685,13 @@ Type: Actormap (-> Any) (Optional (#:catch-errors? Boolean)) -> Any"
   (make-persistence-env
    `(((namespace object) ,object) ...)))
 
-(define (make-actormap-read-portrait! persistence-env roots)
+(define* (make-actormap-read-portrait! persistence-env roots
+                                       #:key [slot->val (make-hash-table)])
   "Creates a read-portrait function for a given graph to take single object portraits of the graph.
 
 Type: PersistenceEnv LiveRefr ... -> Procedure Procedure"
   (when (null? roots)
     (error "At least one root object must be specified to take a portrait"))
-
-  (define slot->val
-    (make-hash-table))
 
   (define (maybe-create-obj-slot! obj)
     "Looks up or creates slot for object"
@@ -2831,9 +2829,9 @@ Type: PersistenceEnv LiveRefr ... -> Procedure Procedure"
       (unless obj-spec
         (error "Don't know how to persist:" this-obj this-obj-constructor-refr))
       (match portrait-data
-        [(? versioned-data? data)
+        [(? versioned? data)
          (define-values (portrait-version portrait-data)
-           (values (versioned-data-version data) (versioned-data-data data)))
+           (values (versioned-version data) (versioned-data data)))
          (list (object-spec-name obj-spec)
                obj-debug-name
                portrait-version
@@ -2972,7 +2970,7 @@ Type: Actormap PersistenceEnv -> TransactorMap"
          ;; but we actually want to keep the old refr.  Once we've rehydrated
          ;; the actor, install the new object at its old refr.
          (define versioned-self-portrait
-           (if (versioned-data? self-portrait)
+           (if (versioned? self-portrait)
                self-portrait
                (versioned 0 self-portrait)))
          ;; Restoring but we need to commit this, for two important reasons:
@@ -2984,8 +2982,8 @@ Type: Actormap PersistenceEnv -> TransactorMap"
             new-actormap
             (lambda ()
               (apply rehydrator
-                     (versioned-data-version versioned-self-portrait)
-                     (versioned-data-data versioned-self-portrait)))))
+                     (versioned-version versioned-self-portrait)
+                     (versioned-data versioned-self-portrait)))))
 
          ;; Set the old refr to point to this new mactor we
          ;; spawned. We could technically set this to a local-link but
@@ -3024,11 +3022,17 @@ Type: Actormap PersistenceEnv -> Void"
   (apply values root-objects))
 
 (define (actormap-restore-with-far-refrs! am persistence-env portraits init-roots)
-  "Restore a self portrait in an actormap"
+  ;; TODO: Maybe we should require roots always to be a list?
   (define roots
     (if (pair? init-roots)
         init-roots
         (list init-roots)))
+  (define-values (changed-objects refrs->slots far-refr-resolvers restored-roots)
+    (actormap-restore-with-far-refrs!* am persistence-env portraits roots))
+  (values far-refr-resolvers restored-roots))
+
+(define (actormap-restore-with-far-refrs!* am persistence-env portraits roots)
+  "Restore a self portrait in an actormap"
   ;; We need to go through all portraits to be able to determine the current
   ;; aurie counter. This is an incrementing integer used by aurie to give refrs
   ;; a unique identifier for both local (as the slot) and intra-vat persistence
@@ -3070,10 +3074,12 @@ Type: Actormap PersistenceEnv -> Void"
   ;; objects which would not only waste resources but cause problems if
   ;; spawned (objects can have side-effects when spawned).
   ;; The restore queue manages all the objects which need restoring.
+  (define changed-objects (make-hash-table))
   (define restore-queue (make-q))
   (define vat-connector (actormap-vat-connector am))
   (define slots->resolvers (make-hash-table))
   (define slots->refrs (make-hash-table))
+  (define refrs->slots (make-hash-table))
   (define (maybe-install-refr-for-slot! slot)
     (match (hashq-ref slots->refrs slot)
       (#f
@@ -3088,6 +3094,7 @@ Type: Actormap PersistenceEnv -> Void"
          (actormap-set! am refr vow-symlink)
          (hashq-set! slots->resolvers slot resolver)
          (hashq-set! slots->refrs slot refr)
+         (hashq-set! refrs->slots refr slot)
          refr))
       (refr refr)))
 
@@ -3142,7 +3149,7 @@ Type: Actormap PersistenceEnv -> Void"
                  (make-tagged label payload)])]
              ['near (maybe-install-refr-for-slot! (car data))]
              ['far
-              ;; Cache the vow since we may have several refrences to the same obj
+              ;; Cache the vow since we may have several references to the same obj
               (match (hash-ref far-refr-vows data #f)
                 (#f
                  (let*-values (((vow resolver) (spawn-promise-and-resolver))
@@ -3192,14 +3199,24 @@ Type: Actormap PersistenceEnv -> Void"
        am
        (lambda ()
          (let ((restored-obj (apply rehydrator obj-portrait-version restored-args)))
-           ($ resolver 'fulfill restored-obj)
-           restored-obj))))
+           (match restored-obj
+             ((? versioned?)
+              (let ((refr (versioned-data restored-obj)))
+                (unless (equal? obj-portrait-version
+                                (versioned-version restored-obj))
+                  (hashq-set! changed-objects refr #t))
+                ($ resolver 'fulfill refr)
+                refr))
+             (refr
+              ($ resolver 'fulfill refr)
+              refr))))))
 
     (transactormap-merge! new-am)
     (enq-msgs! (reverse new-msgs))
 
     ;; Install the mactor in the refr we created.
-    (actormap-set! am refr (actormap-ref am restored-obj-refr)))
+    (actormap-set! am refr (actormap-ref am restored-obj-refr))
+    (values refr obj-portrait-version))
 
   ;; We want to start restoring from the roots, enqueue them to our restore queue
   (actormap-run! am (lambda () (for-each maybe-install-refr-for-slot! roots)))
@@ -3220,6 +3237,15 @@ Type: Actormap PersistenceEnv -> Void"
                   (actormap-turn-message am (deq! near-msg-queue))))
       (match result
         (#('ok _)
+         ;; Objects may have changed during the message churns, these need to be
+         ;; persisted too. Add them to the changed-objects set.
+         (let ((am-data (actormap-data new-am)))
+           (hash-for-each
+            (lambda (refr _)
+              (when (hashq-ref refrs->slots refr)
+                (hashq-set! changed-objects refr #t)))
+            (transactormap-data-delta am-data)))
+
          (transactormap-merge! new-am))
         (_ (values)))
       (enq-msgs! new-msgs)))
@@ -3236,7 +3262,11 @@ Type: Actormap PersistenceEnv -> Void"
     (map (lambda (slot)
            (hashq-ref slots->refrs slot))
          roots))
-  (values far-refr-resolvers restored-roots))
+
+  (define changed-objects-lst
+    (hash-fold (lambda (obj _ prev) (cons obj prev)) '() changed-objects))
+
+  (values changed-objects-lst refrs->slots far-refr-resolvers restored-roots))
 
 (define (actormap-restore-from-store! am env store)
   "Reads portrait graph from STORE and restores into provided AM.
