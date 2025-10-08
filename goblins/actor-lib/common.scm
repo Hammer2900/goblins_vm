@@ -24,6 +24,7 @@
   #:use-module (goblins actor-lib methods)
   #:export (^seteq
             ^ghash
+            ^hashtable
             ^vector
             common-env))
 
@@ -54,6 +55,13 @@
     (and (vhash-assq val vh) #t)]
    [(as-list)
     (vhash->list vh)]))
+
+(define* (make-vector-of-cells size #:optional fill)
+  (let ((v (make-vector size)))
+    (do ((i 0 (1+ i)))
+        ((>= i size))
+      (vector-set! v i (spawn ^cell fill)))
+    v))
 
 ;; And the rest, eventually...
 (define (^seteq bcom . initial)
@@ -97,6 +105,149 @@ Methods:
    [(remove key)
     (bcom (^ghash bcom (hashmap-remove ht key)))]
    [(data) ht]))
+
+(define-actor (^hashtable* bcom tier size buckets)
+  ;; Use a prime number of buckets to encourage good distribution of
+  ;; keys with minimal chaining.
+  ;;
+  ;; Numbers taken from: https://planetmath.org/goodhashtableprimes
+  ;;
+  ;; 11 is a popular initial size as seen in Java and elsewhere.
+  (define %primes
+    #(11 29 53 97 193 389 769 1543 3079 6151 12289 24593 49157 98317
+         196613 393241 786433 1572869 3145739 6291469 12582917 25165843
+         50331653 100663319 201326611 402653189 805306457 1610612741))
+  (define max-tier (1- (vector-length %primes)))
+  (define num-buckets (vector-length buckets))
+  ;; Min/max size thresholds that trigger resizing + rehashing.
+  (define min-size
+    (if (zero? tier)
+        0
+        (inexact->exact (round (* num-buckets 0.25)))))
+  (define max-size
+    (if (= tier max-tier)
+        (inf)
+        (inexact->exact (round (* num-buckets 0.75)))))
+  (define (cvector-ref v i)
+    ($ (vector-ref v i)))
+  (define (cvector-set! v i x)
+    ($ (vector-ref v i) x))
+  (define (fresh-buckets n)
+    (make-vector-of-cells n '()))
+  (define (rehash! old new)
+    (let ((n (vector-length new)))
+      (do ((i 0 (1+ i)))
+          ((= i (vector-length old)))
+        (for-each (lambda (link)
+                    (let* ((j (hashg (car link) n))
+                           (chain (cvector-ref new j)))
+                      (cvector-set! new j (cons link chain))))
+                  (cvector-ref old i)))))
+  (define (maybe-resize proc)
+    (let ((n ($ size)))
+      (cond
+       ((< n min-size) ; tier down
+        (let* ((tier (1- tier))
+               (new-buckets (fresh-buckets (vector-ref %primes tier))))
+          (rehash! buckets new-buckets)
+          (proc new-buckets)
+          (bcom (^hashtable* bcom tier size new-buckets))))
+       ((> n max-size) ; tier up
+        (let* ((tier (1+ tier))
+               (new-buckets (fresh-buckets (vector-ref %primes tier))))
+          (rehash! buckets new-buckets)
+          (proc new-buckets)
+          (bcom (^hashtable* bcom tier size new-buckets))))
+       (else ; no resize necessary
+        (proc buckets)))))
+  (define (bucket-fold proc init)
+    (let bucket-lp ((i 0) (prev init))
+      (if (< i num-buckets)
+          (let chain-lp ((chain (cvector-ref buckets i)) (prev prev))
+            (if (null? chain)
+                (bucket-lp (1+ i) prev)
+                (let ((link (car chain)))
+                  (chain-lp (cdr chain) (proc (car link) (cdr link) prev)))))
+          prev)))
+  (methods
+   ((ref key #:optional default)
+    (let lp ((chain (cvector-ref buckets (hashg key num-buckets))))
+      (if (null? chain)
+          default
+          (let ((link (car chain)))
+            (if (equalg? key (car link))
+                (cdr link)
+                (lp (cdr chain)))))))
+   ((set key value)
+    (maybe-resize
+     (lambda (buckets)
+       (let ((i (hashg key (vector-length buckets))))
+         (cvector-set! buckets i
+                       (let lp ((chain (cvector-ref buckets i)))
+                         (cond
+                          ((null? chain)
+                           ;; Add new key/value pair.
+                           ($ size (1+ ($ size)))
+                           (list (cons key value)))
+                          (else
+                           (let ((link (car chain)))
+                             (if (equalg? key (car link))
+                                 ;; Replace value for existing key.
+                                 (cons (cons key value) (cdr chain))
+                                 (cons link (lp (cdr chain)))))))))))))
+   ((remove key)
+    (maybe-resize
+     (lambda (buckets)
+       (let* ((i (hashg key (vector-length buckets)))
+              (chain (let lp ((chain (cvector-ref buckets i)))
+                       (and (not (null? chain))
+                            (let ((link (car chain)))
+                              (cond
+                               ((equalg? key (car link))
+                                ;; Remove key/value pair from chain.
+                                ($ size (1- ($ size)))
+                                (cdr chain))
+                               (else
+                                (let ((result (lp (cdr chain))))
+                                  (and result (cons link result))))))))))
+         (when chain
+           (cvector-set! buckets i chain))))))
+   ((keys)
+    (bucket-fold (lambda (k v keys) (cons k keys)) '()))
+   ((values)
+    (bucket-fold (lambda (k v vals) (cons v vals)) '()))))
+
+(define (^hashtable bcom)
+  "Spawn and return an actor that stores unordered key/value
+pairs.  Keys are compared by @code{eq?} for refrs and by @code{equal?}
+for everything else.
+
+Methods:
+
+@itemize
+@item @code{ref key [default]}
+
+Return the value associated with @var{key}, otherwise return
+@var{default} or @code{#f}.
+
+@item @code{set key value}
+
+Associate @var{key} with @var{value}.
+
+@item @code{remove key}
+
+Remove the association with @var{key}, if present.
+
+@item @code{keys}
+
+Return a list of stored keys.
+
+@item @code{values}
+
+Return a list of stored values.
+
+@end itemize"
+  (spawn ^hashtable* 0 (spawn ^cell 0) (make-vector-of-cells 11 '())))
 
 (define-actor (^vector* bcom vec)
   ;; Everything within the vec is within a cell so that the entire
@@ -142,6 +293,7 @@ have the initial value of @var{fill}."
 (define common-env
   (make-persistence-env
    `((((goblins actor-lib common) ^ghash) ,^ghash)
+     (((goblins actor-lib common) ^hashtable) ,^hashtable*)
      (((goblins actor-lib common) ^seteq) ,^seteq*)
      (((goblins actor-lib common) ^vector) ,^vector*))
    #:extends cell-env))

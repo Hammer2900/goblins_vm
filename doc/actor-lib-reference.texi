@@ -197,6 +197,38 @@ the @code{dflt} value if needed.
 @end lisp
 @end deffn
 
+@deffn {Constructor} ^hashtable
+Spawn and return an actor that stores unordered key/value pairs.  Keys
+are compared by @code{eq?} for refrs and by @code{equal?}  for
+everything else.
+
+Methods:
+
+@itemize
+@item @code{ref key [default]}
+
+Return the value associated with @var{key}, otherwise return
+@var{default} or @code{#f}.
+
+@item @code{set key value}
+
+Associate @var{key} with @var{value}.
+
+@item @code{remove key}
+
+Remove the association with @var{key}, if present.
+
+@item @code{keys}
+
+Return a list of stored keys.
+
+@item @code{values}
+
+Return a list of stored values.
+
+@end itemize
+@end deffn
+
 @deffn {Constructor} ^vector size [fill]
 
 Construct an actor providing an actor interface to a vector of size @var{size}
