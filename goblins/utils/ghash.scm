@@ -27,7 +27,10 @@
   #:use-module (srfi srfi-9 gnu)    ; record extensions
   #:use-module (ice-9 hash-table)
   #:use-module (ice-9 match)
-  #:export (make-ghash
+  #:export (hashg
+            equalg?
+
+            make-ghash
             ghash?
             ghash
 
