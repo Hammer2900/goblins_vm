@@ -272,13 +272,11 @@ respectively."
 ;;  - Outgoing messages: These are much easier, as we can simply
 ;;    serialize the message and fire it off to the remote actor.
 (define-actor (^prelay-netlayer* bcom self enliven
-                                 prelay-endpoint-sref-vow
-                                 prelay-controller-sref-vow)
-  (define our-location-vow
-    (on prelay-endpoint-sref-vow
-        (lambda (prelay-endpoint-sref)
-          (prelay-sturdyref->prelay-peer prelay-endpoint-sref))
-        #:promise? #t))
+                                 prelay-endpoint-sref
+                                 prelay-controller-sref)
+
+  (define our-location
+    (prelay-sturdyref->prelay-peer prelay-endpoint-sref))
 
   (define-values (conn-establisher-vow conn-establisher-resolver)
     (spawn-promise-and-resolver))
@@ -293,9 +291,9 @@ respectively."
       (if wait-time-sec
           (on (timeout wait-time-sec)
               (lambda _
-                (<- enliven 'enliven prelay-controller-sref-vow))
+                (<- enliven 'enliven prelay-controller-sref))
               #:promise? #t)
-          (<- enliven 'enliven prelay-controller-sref-vow)))
+          (<- enliven 'enliven prelay-controller-sref)))
     (on controller-vow
         (lambda (prelay-controller)
           ;; Setup the on-sever to detect when we need to reconnect.
@@ -347,9 +345,7 @@ respectively."
   (define-values (setup-netlayer-vow setup-netlayer-resolver)
     (spawn-promise-and-resolver))
 
-  (on our-location-vow
-      (lambda (our-location)
-        ($ setup-netlayer-resolver 'fulfill (spawn ^netlayer our-location))))
+  ($ setup-netlayer-resolver 'fulfill (spawn ^netlayer our-location))
 
   (define (^netlayer _bcom our-location)
     (methods

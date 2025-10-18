@@ -28,6 +28,7 @@
           (goblins actor-lib methods)
           (goblins actor-lib joiners)
           (goblins actor-lib facet)
+          (goblins actor-lib on)
           (fibers channels)
           (ice-9 match))
 
@@ -81,7 +82,7 @@ created on this prelay-admin."
                                               #:key
                                               [netlayer #f]
                                               [mycapn #f])
-      "Retrieves account from account-setup-sref and provides prelay-netlayer"
+      "Retrieves account from account-setup-sref and optional netlayer and mycapn. Returns a promise that resolves to a new prelay netlayer."
       (define account-setup-peer
         (ocapn-sturdyref-peer account-setup-sref))
       (define base-netlayer
@@ -110,22 +111,13 @@ created on this prelay-admin."
       (define account-setup-vow
         (<- base-mycapn 'enliven account-setup-sref))
       (define account-vow (<- account-setup-vow))
-      (define prelay-endpoint-sref-vow
-        (on account-vow
-            (match-lambda
-              ((prelay-endpoint-sref _prelay-controller-sref)
-               prelay-endpoint-sref))
-            #:promise? #t))
-      (define prelay-controller-sref-vow
-        (on account-vow
-            (match-lambda
-              ((_prelay-endpoint-sref prelay-controller-sref)
-               prelay-controller-sref))
-            #:promise? #t))
-      (spawn ^prelay-netlayer
-             (spawn ^facet base-mycapn 'enliven)
-             prelay-endpoint-sref-vow
-             prelay-controller-sref-vow))
+
+      (let-on ((prelay-endpoint-sref (<-list-ref account-vow 0))
+               (prelay-controller-sref (<-list-ref account-vow 1)))
+        (spawn ^prelay-netlayer
+               (spawn ^facet base-mycapn 'enliven)
+               prelay-endpoint-sref
+               prelay-controller-sref)))
 
     (define prelay-utils-env
       (make-persistence-env
