@@ -22,6 +22,7 @@
   #:use-module (goblins ocapn netlayer prelay)
   #:use-module (goblins actor-lib joiners)
   #:use-module (goblins actor-lib facet)
+  #:use-module (goblins actor-lib on)
   #:use-module (tests utils)
   #:use-module (fibers)
   #:use-module (fibers channels)
@@ -71,18 +72,24 @@
     (spawn-prelay-pair (spawn ^facet relay-mycapn 'enliven))))
 
 (define-values (ra-endpoint-sref ra-controller-sref)
-  (with-vat relay-vat
-    (values ($ relay-mycapn 'register ra-endpoint 'fake)
-            ($ relay-mycapn 'register ra-controller 'fake))))
+  (match (resolve-vow-and-return-result relay-vat
+           (lambda ()
+             (all-of ($ relay-mycapn 'register ra-endpoint 'fake)
+                     ($ relay-mycapn 'register ra-controller 'fake))))
+    (#(ok (e-sref c-sref))
+     (values e-sref c-sref))))
 
 (define-values (rb-endpoint rb-controller)
   (with-vat relay-vat
     (spawn-prelay-pair (spawn ^facet relay-mycapn 'enliven))))
 
 (define-values (rb-endpoint-sref rb-controller-sref)
-  (with-vat relay-vat
-    (values ($ relay-mycapn 'register rb-endpoint 'fake)
-            ($ relay-mycapn 'register rb-controller 'fake))))
+  (match (resolve-vow-and-return-result relay-vat
+           (lambda ()
+             (all-of ($ relay-mycapn 'register rb-endpoint 'fake)
+                     ($ relay-mycapn 'register rb-controller 'fake))))
+    (#(ok (e-sref c-sref))
+     (values e-sref c-sref))))
 
 ;;; Now to create the prelay and register it with Alice and Bob's mycapns
 (define a-prelay-netlayer
@@ -132,28 +139,42 @@
   (define-values (endpoint controller)
     (with-vat vat
       (spawn-prelay-pair (spawn ^facet mycapn 'enliven))))
-  (define-values (endpoint-sref controller-sref)
+
+  (define-values (endpoint-sref-vow controller-sref-vow)
     (with-vat vat
       (values ($ mycapn 'register endpoint 'fake)
               ($ mycapn 'register controller 'fake))))
+
   (define-values (client-vat client-loc client-netlayer client-mycapn)
     (spawn-vat-in-fakenl (string-append "client-" name)))
-  (define prelay-netlayer
+
+  (define prelay-netlayer-vow
     (with-vat client-vat
-      (spawn ^prelay-netlayer
-             (spawn ^facet client-mycapn 'enliven)
-             endpoint-sref
-             controller-sref)))
+      (let-on ((endpoint-sref endpoint-sref-vow)
+                (controller-sref controller-sref-vow))
+        (spawn ^prelay-netlayer
+               (spawn ^facet client-mycapn 'enliven)
+               endpoint-sref
+               controller-sref))))
+
   (with-vat client-vat
-    ($ client-mycapn 'install-netlayer prelay-netlayer))
-  (values client-vat client-mycapn client-netlayer netlayer))
+    (on prelay-netlayer-vow
+        (lambda (prelay-netlayer)
+          ($ client-mycapn 'install-netlayer prelay-netlayer))))
+
+  (values client-vat client-mycapn client-netlayer netlayer prelay-netlayer-vow))
 
 
 ;; Register the prelay with each side
-(define-values (c-vat c-mycapn _cc-netlayer _cs-netlayer)
+(define-values (c-vat c-mycapn _cc-netlayer _cs-netlayer c-prelay-vow)
   (setup-prelay "carol"))
-(define-values (d-vat d-mycapn _dd-netlayer _ds-netlayer)
+(resolve-vow-and-return-result c-vat
+  (lambda () c-prelay-vow))
+
+(define-values (d-vat d-mycapn _dd-netlayer _ds-netlayer d-prelay-vow)
   (setup-prelay "debra"))
+(resolve-vow-and-return-result d-vat
+  (lambda () d-prelay-vow))
 
 (define c-greeter
   (with-vat c-vat
@@ -189,11 +210,15 @@
 ;; to her prelay, her refrs and bob's refrs should trigger on-sever using the
 ;; prelay.
 
-(define-values (e-vat e-mycapn ec-netlayer es-netlayer)
+(define-values (e-vat e-mycapn ec-netlayer es-netlayer e-prelay-vow)
   (setup-prelay "elsa"))
+(resolve-vow-and-return-result e-vat
+  (lambda () e-prelay-vow))
 
-(define-values (f-vat f-mycapn fc-netlayer fs-netlayer)
+(define-values (f-vat f-mycapn fc-netlayer fs-netlayer f-prelay-vow)
   (setup-prelay "frank"))
+(resolve-vow-and-return-result f-vat
+  (lambda () f-prelay-vow))
 
 (define elsa-greeter
   (with-vat e-vat
@@ -265,11 +290,15 @@
      elsa-on-f-severed-vow)))
 
 ;; Test when the two prelays disconnect
-(define-values (g-vat g-mycapn gc-netlayer gs-netlayer)
+(define-values (g-vat g-mycapn gc-netlayer gs-netlayer g-prelay-vow)
   (setup-prelay "gary"))
+(resolve-vow-and-return-result g-vat
+  (lambda () g-prelay-vow))
 
-(define-values (h-vat h-mycapn hc-netlayer hs-netlayer)
+(define-values (h-vat h-mycapn hc-netlayer hs-netlayer h-prelay-vow)
   (setup-prelay "hannah"))
+(resolve-vow-and-return-result h-vat
+  (lambda () h-prelay-vow))
 
 (define gary-greeter
   (with-vat g-vat
@@ -342,10 +371,15 @@
 (define-values (reconnect-endpoint reconnect-controller)
   (with-vat reconnect-server-vat
     (spawn-prelay-pair (spawn ^facet reconnect-server-mycapn 'enliven))))
+
 (define-values (reconnect-endpoint-sref reconnect-controller-sref)
-  (with-vat reconnect-server-vat
-    (values ($ reconnect-server-mycapn 'register reconnect-endpoint 'fake)
-            ($ reconnect-server-mycapn 'register reconnect-controller 'fake))))
+  (match (resolve-vow-and-return-result reconnect-server-vat
+           (lambda ()
+             (all-of ($ reconnect-server-mycapn 'register reconnect-endpoint 'fake)
+                     ($ reconnect-server-mycapn 'register reconnect-controller 'fake))))
+    (#(ok (e-sref c-sref))
+     (values e-sref c-sref))))
+
 (define-values (reconnect-client-vat reconnect-client-loc
                                      reconnect-client-netlayer
                                      reconnect-client-mycapn)
@@ -375,15 +409,14 @@
 ;, new one as explained below. Make a throw away client to get the sturdyref
 ;; then check we've halted the prelay server netlayer.
 (define halted-server-netlayer?
-  (let-values (((vat mycapn client-netlayer server-netlayer)
+  (let-values (((vat mycapn client-netlayer server-netlayer prelay-vow)
                 (setup-prelay "throwaway")))
     (with-vat vat
-      (on (<- mycapn 'enliven reconnect-greeter-sref)
-          (lambda (greeter)
-            ;; We now know the client and server are connected, as we have the refr.
-            ;; now just wait until we've halted
-            (<- reconnect-server-netlayer 'halt))
-          #:promise? #t))))
+      (let*-on ((prelay prelay-vow)
+                (greeter (<- mycapn 'enliven reconnect-greeter-sref)))
+        ;; We now know the client and server are connected, as we have the refr.
+        ;; now just wait until we've halted
+        (<- reconnect-server-netlayer 'halt)))))
 
 ;; We need to do this manually, not using spawn-vat-in-fakenl because if we setup
 ;; and install ourselves before the above happens, we clobber them causing
@@ -429,7 +462,7 @@
         #:promise? #t)))
 
 ;; Now whats left to do is try and connect
-(let-values (((vat mycapn client-netlayer server-netlayer)
+(let-values (((vat mycapn client-netlayer server-netlayer prelay-vow)
               (setup-prelay "testing")))
   (test-equal "Test prelay reconnects and remains reachable after connection breakage"
     #(ok "Hello testing, my name is Reconnect!")
@@ -438,10 +471,9 @@
      (lambda ()
        ;; Have to make sure we've waited until it's halted before we reconnect.
        (define reconnected-greeter-vow
-         (on reconnect-ready?
-             (lambda _
-               (<- mycapn 'enliven reconnect-greeter-sref))
-             #:promise? #t))
+         (let*-on ((prelay prelay-vow)
+                   (ready reconnect-ready?))
+           (<- mycapn 'enliven reconnect-greeter-sref)))
        (<- reconnected-greeter-vow "testing")))))
 
 (test-end "test-prelay")
