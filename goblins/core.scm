@@ -17,6 +17,7 @@
 
 (define-module (goblins core)
   #:export (make-actormap
+            make-strong-actormap
             make-transactormap
             make-whactormap
 
@@ -54,6 +55,8 @@
             transactormap-buffer-merge!
 
             copy-whactormap
+            copy-strong-actormap
+            strong-actormap->whactormap!
 
             refr-name
             near-refr?
@@ -539,14 +542,13 @@ Type: TransActormap -> Void"
       (cond
        [(eq? parent-mtype whactormap-metatype)
         parent]
+       [(eq? parent-mtype strong-actormap-metatype)
+        parent]
        [(eq? parent-mtype transactormap-metatype)
         (do-merge! parent)]
        [else
         (error (format #f "Actormap metatype not supported for merging: ~a"
                        parent-mtype))]))
-    ;; Optimization: we pull out the root weak hash table here and
-    ;; merge it
-    (define root-wht (whactormap-data-wht (actormap-data root-actormap)))
     (unless (transactormap-data-merged? tm-data)
       (hash-for-each
        (lambda (key val)
@@ -613,6 +615,36 @@ Type: Actormap -> TransActormap"
                   (make-transactormap-data new-parent delta #f)
                   vat-connector
                   (actormap-aurie-counter transactormap)))
+
+;; Strong actormaps
+(define* (make-strong-actormap #:key (vat-connector #f) (aurie-counter 0))
+  (_make-actormap strong-actormap-metatype
+                  (make-strong-actormap-data (make-hash-table))
+                  vat-connector aurie-counter))
+(define (strong-actormap->whactormap! am)
+  (unless (strong-actormap? am)
+    (error "Can only produce weak actormaps from strong actormaps"))
+
+  ;; We need to convert the actormap into a whactormap, we do this by changing
+  ;; the data and metatype of the actormap passed in to be the appropriate
+  ;; values for a whactormap.
+  (define wht (make-weak-key-hash-table))
+  (define whactormap-data (make-whactormap-data wht))
+  (actormap-for-each
+   (lambda (refr mactor)
+     (hashq-set! wht refr mactor))
+   am)
+  (set-actormap-data! am whactormap-data)
+  (set-actormap-metatype! am whactormap-metatype))
+
+(define (copy-strong-actormap am)
+  (define sm (make-strong-actormap #:vat-connector (actormap-vat-connector am)
+                                   #:aurie-counter (actormap-aurie-counter am)))
+  (actormap-for-each
+   (lambda (refr mactor)
+     (actormap-set! sm refr mactor))
+   am)
+  sm)
 
 
 ;; "Become" sealer/unsealers
@@ -2926,8 +2958,6 @@ This works the same as `actormap-replace-behavior!' but it returns
 a transactormap which the user can choose whether or not to commit.
 
 Type: Actormap PersistenceEnv -> TransactorMap"
-  (define metatype (actormap-metatype am))
-  (define actormap-for-each (actormap-metatype-for-each-proc metatype))
   (define new-actormap (make-transactormap am))
 
   (define (has-new-beh? object-spec mactor)

@@ -36,6 +36,9 @@
             actormap-aurie-counter
             actormap-ref
             actormap-set!
+            actormap-for-each
+            set-actormap-metatype!
+            set-actormap-data!
             set-actormap-aurie-counter!
 
             merge-actormap-aurie-counters!
@@ -58,6 +61,10 @@
             whactormap-ref
             whactormap-set!
             whactormap-metatype
+
+            strong-actormap-metatype
+            strong-actormap?
+            make-strong-actormap-data
 
             <transactormap-data>
             make-transactormap-data
@@ -228,8 +235,8 @@
   ;; TODO: This is confusing, naming-wise? (see make-actormap alias)
   (_make-actormap metatype data vat-connector aurie-counter)
   actormap?
-  (metatype actormap-metatype)
-  (data actormap-data)
+  (metatype actormap-metatype set-actormap-metatype!)
+  (data actormap-data set-actormap-data!)
   (vat-connector actormap-vat-connector)
   (aurie-counter actormap-aurie-counter set-actormap-aurie-counter!))
 
@@ -271,6 +278,9 @@
 (define (actormap-ref am key)
   ((actormap-metatype-ref-proc (actormap-metatype am)) am key))
 
+(define (actormap-for-each proc am)
+  ((actormap-metatype-for-each-proc (actormap-metatype am)) proc am))
+
 (define-record-type <whactormap-data>
   (make-whactormap-data wht)
   whactormap-data?
@@ -297,6 +307,32 @@ Type: Any -> Boolean"
 (define whactormap-metatype
   (make-actormap-metatype 'whactormap whactormap-ref whactormap-set!
                           whactormap-for-each))
+
+
+;; These are like a whactormap, except they do hold strong references. They are
+;; designed to be able to be converted into whactormaps. Since transactormaps
+;; refer to their parent, that the actormap itself "bcom"es a whactormap.
+(define-record-type <strong-actormap-data>
+  (make-strong-actormap-data ht)
+  strong-actormap-data?
+  (ht strong-actormap-data-ht ht))
+
+(define (strong-actormap? obj)
+  (and (actormap? obj)
+       (eq? (actormap-metatype obj) strong-actormap-metatype)))
+(define (strong-actormap-ref am key)
+  (define ht (strong-actormap-data-ht (actormap-data am)))
+  (hashq-ref ht key))
+(define (strong-actormap-set! am key val)
+  (define ht (strong-actormap-data-ht (actormap-data am)))
+  (hashq-set! ht key val))
+(define (strong-actormap-for-each proc am)
+  (hash-for-each proc(strong-actormap-data-ht (actormap-data am))))
+(define strong-actormap-metatype
+  (make-actormap-metatype 'strong-actormap
+                          strong-actormap-ref
+                          strong-actormap-set!
+                          strong-actormap-for-each))
 
 ;; Transactional actormaps
 ;; =======================

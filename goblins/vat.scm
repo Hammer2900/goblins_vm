@@ -649,6 +649,7 @@ like this:
 (define default-log-capacity 256)
 
 (define* (make-vat #:key persistence-env name start halt send log?
+                   (make-actormap make-actormap)
                    (log-capacity default-log-capacity))
   "Return a new vat named NAME.  Vat behavior is determined by three
 event hooks:
@@ -1027,7 +1028,8 @@ logging."
                            (persistence-env #f)
                            (log-capacity default-log-capacity)
                            (scheduler (default-vat-scheduler))
-                           (dynamic-wrap port-redirect-dynamic-wrap))
+                           (dynamic-wrap port-redirect-dynamic-wrap)
+                           (make-actormap make-actormap))
   (define done? (make-condition))
   (define-values (enq-ch deq-ch stop?)
     (spawn-delivery-agent #:scheduler scheduler))
@@ -1081,19 +1083,22 @@ logging."
             #:start start
             #:halt halt
             #:send send
-            #:persistence-env persistence-env))
+            #:persistence-env persistence-env
+            #:make-actormap make-actormap))
 
 (define* (spawn-fibrous-vat #:key name log?
                             (persistence-env #f)
                             (log-capacity default-log-capacity)
                             (scheduler (default-vat-scheduler))
-                            (dynamic-wrap port-redirect-dynamic-wrap))
+                            (dynamic-wrap port-redirect-dynamic-wrap)
+                            (make-actormap make-actormap))
   (let ((vat (make-fibrous-vat #:name name
                                #:log? log?
                                #:log-capacity log-capacity
                                #:scheduler scheduler
                                #:dynamic-wrap dynamic-wrap
-                               #:persistence-env persistence-env)))
+                               #:persistence-env persistence-env
+                               #:make-actormap make-actormap)))
     (vat-start! vat)
     vat))
 
@@ -1338,10 +1343,10 @@ Type: (Optional (#:name (U String Symbol)) (Optional (#:log? Boolean))
 
 ;; Request to register a vat
 (define-record-type <register-request>
-  (make-register-request vat-aurie-id vat)
+  (make-register-request vat-aurie-id actormap)
   register-request?
   (vat-aurie-id register-request-vat-aurie-id)
-  (vat register-request-vat))
+  (actormap register-request-actormap))
 
 (define-record-type <registry-fetch-vat>
   (make-registry-fetch-vat vat-aurie-id)
@@ -1351,12 +1356,10 @@ Type: (Optional (#:name (U String Symbol)) (Optional (#:log? Boolean))
 (define* (^persistence-registry bcom #:optional (vat-id->vat (make-ghash)))
   (match-lambda
     ((? register-request? reg-request)
-     (define vat-aurie-id
-       (register-request-vat-aurie-id reg-request))
-     (define vat-to-register
-       (register-request-vat reg-request))
-     (define vat-obj
-       (spawn ^aurie-vat-refr-resolver vat-to-register))
+     (define vat-aurie-id (register-request-vat-aurie-id reg-request))
+     (define actormap (register-request-actormap reg-request))
+     (define vat-obj (spawn ^aurie-vat-refr-resolver actormap))
+
      ;; fulfill a waiting resolver, if there is one
      ;; If there is not... we should error (?)
      (match (hashmap-ref vat-id->vat vat-aurie-id #f)
@@ -1389,8 +1392,7 @@ Type: (Optional (#:name (U String Symbol)) (Optional (#:log? Boolean))
        ;; otherwise, it must be the registered vat, so return that
        (vat vat)))))
 
-(define (^aurie-vat-refr-resolver _bcom vat)
-  (define actormap (vat-actormap vat))
+(define (^aurie-vat-refr-resolver _bcom actormap)
   (define metatype (actormap-metatype actormap))
   (define actormap-for-each (actormap-metatype-for-each-proc metatype))
   (define aurie-id->refr
@@ -1477,7 +1479,11 @@ using the migrations macro."
      #:persistence-env vat-persistence
      #:name name
      #:log? log?
-     #:log-capacity log-capacity))
+     #:log-capacity log-capacity
+     ;; This is converted into a whactormap later.
+     #:make-actormap (if persistence-registry
+                         make-strong-actormap
+                         make-actormap)))
 
   (define-values (far-refr-resolvers roots read-portrait!* val->slot-ref*
                                      changed-objects spawned-new?)
@@ -1541,10 +1547,17 @@ using the migrations macro."
   (when persistence-registry
     ;; Register this vat.
     ;;
-    ;; We wait to talk to the registry until after all our Aurie objects
-    ;; are restored to avoid race conditions.
-    (<-np-extern persistence-registry
-                 (make-register-request current-vat-aurie-id vat))
+    (let ((am (copy-strong-actormap (vat-actormap vat))))
+      ;; We wait to talk to the registry until after all our Aurie objects
+      ;; are restored to avoid race conditions.
+      (<-np-extern persistence-registry
+                   (make-register-request current-vat-aurie-id am))
+
+      ;; Now we've handed over our actormap to the persistence registry, we can
+      ;; stop holding onto strong references to the actors.
+      (call-system-op-with-vat vat
+        (lambda (vat)
+          (strong-actormap->whactormap! (vat-actormap vat)))))
 
     ;; Go through all the far actors we're waiting for and try and fetch them.
     (when far-refr-resolvers
