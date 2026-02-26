@@ -119,6 +119,7 @@
             define-vat-run
 
             ^persistence-registry
+            define-persistent-vats
 
             ;; and here's a hack, but maybe someone wants
             ;; to start with it and tweak it
@@ -1402,6 +1403,21 @@ Type: (Optional (#:name (U String Symbol)) (Optional (#:log? Boolean))
    actormap)
   (lambda (aurie-actor-id)
     (hash-ref aurie-id->refr aurie-actor-id)))
+
+(define-syntax define-persistent-vats
+  (lambda (stx)
+    (syntax-case stx ()
+      ((_ (define-vat (vat-name refr ...) spawn-args ...) ...)
+       #`(begin
+           (define persistence-registry
+             (with-vat (spawn-vat #:name "Persistence Registry")
+               (spawn ^persistence-registry)))
+           (define-values (vat-name refr ...)
+             (spawn-persistent-vat
+              spawn-args ...
+              #:persistence-registry persistence-registry))
+           ...
+           (set! persistence-registry #f))))))
 
 (define* (spawn-persistent-vat persistence-env spawn-roots-thunk store
                                #:key (persist-on 'churn)
