@@ -70,6 +70,8 @@
             transactormap-data-merged?
             set-transactormap-data-merged?!
             transactormap-merged?
+            transactormap-data-read-refrs
+            transactormap-mark-as-read
 
             transactormap-data-read-refrs
             transactormap-mark-as-read
@@ -212,6 +214,17 @@
             sleep-profile-strategy
             set-sleep-profile-strategy!
 
+            <sleep-strategy>
+            make-sleep-strategy
+            sleep-strategy?
+            sleep-strategy-make-stats
+            sleep-strategy-notify-ref
+            sleep-strategy-notify-spawned
+            sleep-strategy-notify-awoken
+            sleep-strategy-determine-sleep-refrs
+            sleep-strategy-make-new-stats
+            sleep-strategy-merge-stats!
+
             <versioned>
             versioned
             versioned?
@@ -344,6 +357,10 @@ Type: Any -> Boolean"
 (define (whactormap-for-each proc am)
   (hash-for-each proc (whactormap-data-wht (actormap-data am))))
 
+(define (whactormap-mark-as-read am refr)
+  ;; Whactormaps don't track this, it's a no op
+  (values))
+
 (define whactormap-metatype
   (make-actormap-metatype 'whactormap whactormap-ref whactormap-set!
                           ;; These two are effectively no-ops for whactormaps.
@@ -354,10 +371,11 @@ Type: Any -> Boolean"
 ;; =======================
 
 (define-record-type <transactormap-data>
-  (make-transactormap-data parent delta merged?)
+  (make-transactormap-data parent delta read-refrs merged?)
   transactormap-data?
   (parent transactormap-data-parent)
   (delta transactormap-data-delta)
+  (read-refrs transactormap-data-read-refrs)
   (merged? transactormap-data-merged? set-transactormap-data-merged?!))
 
 (define (transactormap-merged? transactormap)
