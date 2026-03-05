@@ -38,6 +38,8 @@
             actormap-set!
             set-actormap-aurie-counter!
             actormap-for-each
+            actormap-mark-as-refed!
+            actormap-get-refed
 
             merge-actormap-aurie-counters!
             increment-actormap-aurie-counter!
@@ -68,6 +70,10 @@
             transactormap-data-merged?
             set-transactormap-data-merged?!
             transactormap-merged?
+
+            transactormap-data-read-refrs
+            transactormap-mark-as-read
+            transactormap-get-refed
 
             <local-object-refr>
             make-local-object-refr
@@ -285,17 +291,27 @@
 ;;    (format port "#<actormap ~a>" (actormap-metatype-name (actormap-metatype am)))))
 
 (define-record-type <actormap-metatype>
-  (make-actormap-metatype name ref-proc set!-proc for-each-proc)
+  (make-actormap-metatype name ref-proc set!-proc mark-as-refed-proc
+                          get-refed-proc for-each-proc)
   actormap-metatype?
   (name actormap-metatype-name)
   (ref-proc actormap-metatype-ref-proc)
   (set!-proc actormap-metatype-set!-proc)
+  (mark-as-refed-proc actormap-metatype-mark-as-refed)
+  (get-refed-proc actormap-metatype-get-refed-proc)
   (for-each-proc actormap-metatype-for-each-proc))
 
 (define (actormap-set! am key val)
   ((actormap-metatype-set!-proc (actormap-metatype am))
    am key val)
   *unspecified*)
+
+(define (actormap-mark-as-refed! am refr)
+  ((actormap-metatype-mark-as-refed (actormap-metatype am)) am refr)
+  (values))
+
+(define (actormap-get-refed am)
+  ((actormap-metatype-get-refed-proc (actormap-metatype am)) am))
 
 ;; (-> actormap? local-refr? (or/c mactor? #f))
 (define (actormap-ref am key)
@@ -330,6 +346,8 @@ Type: Any -> Boolean"
 
 (define whactormap-metatype
   (make-actormap-metatype 'whactormap whactormap-ref whactormap-set!
+                          ;; These two are effectively no-ops for whactormaps.
+                          whactormap-mark-as-read make-hash-table
                           whactormap-for-each))
 
 ;; Transactional actormaps
@@ -344,6 +362,12 @@ Type: Any -> Boolean"
 
 (define (transactormap-merged? transactormap)
   (transactormap-data-merged? (actormap-data transactormap)))
+
+(define (transactormap-mark-as-read tm refr)
+  (hashq-set! (transactormap-data-read-refrs (actormap-data tm)) refr #t))
+
+(define (transactormap-get-refed tm)
+  (transactormap-data-read-refrs (actormap-data tm)))
 
 ;; Ref(r)s
 ;; =======

@@ -469,8 +469,7 @@
 ;; ===================
 
 
-(define* (make-whactormap #:key [vat-connector #f]
-                          [aurie-counter 0])
+(define* (make-whactormap #:key vat-connector (aurie-counter 0))
   "Create and return a reference to a weak-hash actormap. If provided,
 VAT-CONNECTOR is the syscaller of the containing vat.
 
@@ -554,10 +553,16 @@ Type: TransActormap -> Void"
     ;; merge it
     (define root-wht (whactormap-data-wht (actormap-data root-actormap)))
     (unless (transactormap-data-merged? tm-data)
+      ;; Merge the new mactor data
       (hash-for-each
        (lambda (key val)
          (actormap-set! root-actormap key val))
        (transactormap-data-delta tm-data))
+      ;; Merge the ref'ed marks
+      (hash-for-each
+       (lambda (key val)
+         (actormap-mark-as-refed! root-actormap key))
+       (transactormap-data-read-refrs tm-data))
       (merge-actormap-aurie-counters! root-actormap transactormap)
       (set-transactormap-data-merged?! tm-data #t))
 
@@ -598,6 +603,10 @@ Type: TransActormap -> Void"
    (lambda (key val)
      (parent-actormap-set! parent key val))
    (transactormap-data-delta tm-data))
+  (hash-for-each
+   (lambda (key val)
+     (actormap-mark-as-refed! parent key))
+   (transactormap-data-read-refrs tm-data))
   (merge-actormap-aurie-counters! parent transactormap)
   (set-transactormap-data-merged?! tm-data #t))
 
@@ -611,6 +620,7 @@ Type: TransActormap -> Void"
 
 (define transactormap-metatype
   (make-actormap-metatype 'transactormap transactormap-ref transactormap-set!
+                          transactormap-mark-as-read transactormap-get-refed
                           transactormap-for-each))
 
 (define (make-transactormap parent)
@@ -1053,6 +1063,8 @@ Type: Any -> Boolean"
             (mactor:object-become-unsealer mactor)))
        (define (_do-actor-call)
          (apply actor-behavior args))
+       ;; Mark the reference as "refed" so the sleep strategy gets informed.
+       (actormap-mark-as-refed! actormap to-refr)
        (define (_handle-await k fulfill-proc promise?)
          (define-values (waiting-promise waiting-resolver)
            (_spawn-promise-and-resolver))
@@ -1194,7 +1206,8 @@ Type: Any -> Boolean"
        pre-existing-refr]
       [_
        (error 'invalid-actor-handler "Not a procedure or live refr:" initial-behavior)]))
-  (create-refr initial-behavior))
+  (define refr (create-refr initial-behavior))
+  refr)
 
 (define (syscaller-fulfill-promise syscaller promise-id sealed-val)
   (define actormap (syscaller-actormap syscaller))
@@ -1851,6 +1864,11 @@ Type: Any -> Boolean"
   (syscaller? (current-syscaller)))
 
 
+(define (get-sleep-profile)
+  ;; Prefer syscaller's, if it exists
+  (or (and=> (current-syscaller) syscaller-sleep-profile)
+      (current-sleep-profile)))
+
 
 ;; Core API (spawn, $, <-, <-np, on)
 ;; =================================
@@ -2296,14 +2314,17 @@ Type: -> (Values Promise Resolver)"
 ;; ========
 
 (define (actormap-spawn-named* actormap name actor-constructor args)
-  (define new-actormap
-    (make-transactormap actormap))
-  (call-with-fresh-syscaller
-   new-actormap
-   (lambda (sys)
-     (define actor-refr
-       (syscaller-spawn sys actor-constructor args name))
-     (values actor-refr new-actormap))))
+  (define sleep-profile (get-sleep-profile))
+  (define new-actormap (make-transactormap actormap))
+  (call-with-sleep-profile
+   sleep-profile
+   (lambda ()
+     (call-with-fresh-syscaller
+      new-actormap
+      (lambda (sys)
+        (define actor-refr
+          (syscaller-spawn sys actor-constructor args name))
+        (values actor-refr new-actormap))))))
 
 ;; These four are user-facing procedures.  Thus, they set up
 ;; their own syscaller.
@@ -2369,14 +2390,17 @@ and a list of new Messages.
 
 Type: Actormap Actor Any ... ->
 (Values Any Actormap (List Message ...))"
-  (call-with-fresh-syscaller
-   actormap
-   (lambda (sys)
-     (define result-val
-       (syscaller-$ sys to-refr args))
-     (values result-val
-             (syscaller-actormap sys)
-             (syscaller-new-msgs sys)))))
+  (call-with-sleep-profile
+   (get-sleep-profile)
+   (lambda ()
+     (call-with-fresh-syscaller
+      actormap
+      (lambda (sys)
+        (define result-val
+          (syscaller-$ sys to-refr args))
+        (values result-val
+                (syscaller-actormap sys)
+                (syscaller-new-msgs sys)))))))
 
 (define (actormap-turn actormap to-refr . args)
   "Invoke TO-REFR with ARGS in a new Actormap whose parent is
@@ -2524,92 +2548,96 @@ otherwise propagate the error.
 Type: Actormap Message (Optional (#:error-handler (Exception -> Any)))
 (Optional (#:reckless? Boolean)) (Optional (#:catch-errors? Boolean))
 -> Any"
+  (define sleep-profile (get-sleep-profile))
   (define new-actormap
     (if reckless?
         actormap
         (make-transactormap actormap)))
   ;; TODO: Kuldgily reimplements part of actormap-turn*... maybe
   ;; there's some opportunity to combine things, dunno.
-  (call-with-fresh-syscaller
-   new-actormap
-   (lambda (sys)
-     (define (error-prompt-handler kont err stack-at-exn)
-       ;; Since we threw an exception, we should inform that this
-       ;; failed... if anyone cares
-       (define resolve-me
-         (message-who-wants-response msg))
-       (define new-msgs
-         (if resolve-me
-             (list (make-message (syscaller-vat-connector sys)
-                                 resolve-me #f (list 'break err)))
-             '()))
-       ;; Decorate the original exception with an actormap turn error
-       ;; that captures the stack in which the original exception
-       ;; occurred.
-       (define turn-error
-         (make-exception (make-actormap-turn-error stack-at-exn) err))
-       (when error-handler
-         (error-handler msg err stack-at-exn))
-       (values `#(fail ,turn-error) actormap new-msgs))
-     (define handle-exn-tag (make-prompt-tag 'goblins-turn))
-     (define (catch-stack-and-abort-to-prompt err)
-       ;; Prepare a slice of the call stack that only has the frames
-       ;; relevant to the actor behavior that threw the error.  This
-       ;; way we aren't exposing Goblins core stack frames, which
-       ;; would be a security leak in a fully OCap secure system.
-       (define stack
-         (capture-current-stack
-          #t ; get the current stack
-          ;; Trim inner frames up to and including this
-          ;; error handling procedure.
-          catch-stack-and-abort-to-prompt
-          ;; Trim outer frames up to the prompt tag.  This
-          ;; hides *most* of the core frames.
-          handle-exn-tag
-          ;; The frame trimming arguments go inner, outer,
-          ;; inner, outer, etc. so we need to no-op here so
-          ;; we can trim more outer frames.
-          0
-          ;; Trim 3 more outer frames that the tag doesn't
-          ;; eliminate for us.
-          ;;
-          ;; The frames are:
-          ;;
-          ;; - with-exception-handler
-          ;; - do-call
-          ;; - _handle-message or _handle-listen
-          3))
-       (abort-to-prompt handle-exn-tag err stack))
-     (define (do-call)
-       (define result
-         (match msg
-           [(? message?)
-            (syscaller-handle-message sys msg)]
-           [(? listen-request? lr)
-            (syscaller-handle-listen sys
-                                     (listen-request-to lr)
-                                     (listen-request-listener lr)
-                                     (listen-request-wants-partial? lr))]
-           [(? ref-request? rr)
-            (syscaller-handle-ref-request sys
-                                          (ref-request-type rr)
-                                          (ref-request-to rr)
-                                          (ref-request-ref-by rr)
-                                          (ref-request-resolver rr))]))
-       (values `#(ok ,result) new-actormap (syscaller-new-msgs sys)))
-     (if catch-errors?
-         ;; We're catching errors?  Well, let's capture the stack without
-         ;; unwinding, *then* abort to a prompt where it's safe to process
-         ;; it...
-         (call-with-prompt handle-exn-tag
-           (lambda ()
-             (with-exception-handler catch-stack-and-abort-to-prompt
-               do-call
-               #:unwind? #f
-               #:unwind-for-type #t))
-           error-prompt-handler)
-         ;; No?  Well then, it's much simpler...
-         (do-call)))))
+  (call-with-sleep-profile
+   sleep-profile
+   (lambda ()
+     (call-with-fresh-syscaller
+      new-actormap
+      (lambda (sys)
+        (define (error-prompt-handler kont err stack-at-exn)
+          ;; Since we threw an exception, we should inform that this
+          ;; failed... if anyone cares
+          (define resolve-me
+            (message-who-wants-response msg))
+          (define new-msgs
+            (if resolve-me
+                (list (make-message (syscaller-vat-connector sys)
+                                    resolve-me #f (list 'break err)))
+                '()))
+          ;; Decorate the original exception with an actormap turn error
+          ;; that captures the stack in which the original exception
+          ;; occurred.
+          (define turn-error
+            (make-exception (make-actormap-turn-error stack-at-exn) err))
+          (when error-handler
+            (error-handler msg err stack-at-exn))
+          (values `#(fail ,turn-error) actormap new-msgs))
+        (define handle-exn-tag (make-prompt-tag 'goblins-turn))
+        (define (catch-stack-and-abort-to-prompt err)
+          ;; Prepare a slice of the call stack that only has the frames
+          ;; relevant to the actor behavior that threw the error.  This
+          ;; way we aren't exposing Goblins core stack frames, which
+          ;; would be a security leak in a fully OCap secure system.
+          (define stack
+            (capture-current-stack
+             #t ; get the current stack
+             ;; Trim inner frames up to and including this
+             ;; error handling procedure.
+             catch-stack-and-abort-to-prompt
+             ;; Trim outer frames up to the prompt tag.  This
+             ;; hides *most* of the core frames.
+             handle-exn-tag
+             ;; The frame trimming arguments go inner, outer,
+             ;; inner, outer, etc. so we need to no-op here so
+             ;; we can trim more outer frames.
+             0
+             ;; Trim 3 more outer frames that the tag doesn't
+             ;; eliminate for us.
+             ;;
+             ;; The frames are:
+             ;;
+             ;; - with-exception-handler
+             ;; - do-call
+             ;; - _handle-message or _handle-listen
+             3))
+          (abort-to-prompt handle-exn-tag err stack))
+        (define (do-call)
+          (define result
+            (match msg
+              [(? message?)
+               (syscaller-handle-message sys msg)]
+              [(? listen-request? lr)
+               (syscaller-handle-listen sys
+                                        (listen-request-to lr)
+                                        (listen-request-listener lr)
+                                        (listen-request-wants-partial? lr))]
+              [(? ref-request? rr)
+               (syscaller-handle-ref-request sys
+                                             (ref-request-type rr)
+                                             (ref-request-to rr)
+                                             (ref-request-ref-by rr)
+                                             (ref-request-resolver rr))]))
+          (values `#(ok ,result) new-actormap (syscaller-new-msgs sys)))
+        (if catch-errors?
+            ;; We're catching errors?  Well, let's capture the stack without
+            ;; unwinding, *then* abort to a prompt where it's safe to process
+            ;; it...
+            (call-with-prompt handle-exn-tag
+              (lambda ()
+                (with-exception-handler catch-stack-and-abort-to-prompt
+                  do-call
+                  #:unwind? #f
+                  #:unwind-for-type #t))
+              error-prompt-handler)
+            ;; No?  Well then, it's much simpler...
+            (do-call)))))))
 
 (define* (actormap-churn am msg
                          #:key [catch-errors? #t]
