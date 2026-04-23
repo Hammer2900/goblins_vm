@@ -94,6 +94,7 @@ SOURCES = goblins.scm \
           goblins/ocapn/netlayer/testuds.scm \
           goblins/ocapn/netlayer/utils.scm \
           goblins/persistence-store/bloblin.scm \
+          goblins/persistence-store/indexed-db.scm \
           goblins/persistence-store/local-storage.scm \
           goblins/persistence-store/memory.scm \
           goblins/persistence-store/syrup.scm \

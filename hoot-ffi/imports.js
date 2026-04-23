@@ -89,6 +89,45 @@ let bindings = {
                 signature,
                 data
             )
+    },
+    indexedDB: {
+        dbOpen: (name, upgrade) => new Promise((resolve, reject) => {
+            const request = indexedDB.open(name);
+            request.addEventListener("success", (e) => resolve(request.result));
+            request.addEventListener("error", (e) => reject());
+            request.addEventListener("upgradeneeded", (e) => upgrade(request.result));
+        }),
+        dbCreateObjectStore: (db, name) => db.createObjectStore(name),
+        dbTransaction: (db, name, mode) => db.transaction(name, mode),
+        dbTransaction2: (db, name1, name2, mode) => db.transaction([name1, name2], mode),
+        objectStoreCount: (store) => new Promise((resolve, reject) => {
+            const request = store.count();
+            request.addEventListener("success", (e) => resolve(request.result));
+            request.addEventListener("error", (e) => reject());
+        }),
+        objectStoreForEach: (store, f) => new Promise((resolve, reject) => {
+            store.openCursor().onsuccess = (e) => {
+                const cursor = event.target.result;
+                if (cursor) {
+                    f(cursor.key, cursor.value);
+                    cursor.continue();
+                } else {
+                    resolve();
+                }
+            };
+        }),
+        objectStoreGet: (store, k) => new Promise((resolve, reject) => {
+            const request = store.get(k);
+            request.addEventListener("success", (e) => resolve(request.result));
+            request.addEventListener("error", (e) => reject());
+        }),
+        objectStorePut: (store, k, v) => store.put(v, k),
+        transactionObjectStore: (t, name) => t.objectStore(name),
+        transactionCommit: (t) => new Promise((resolve, reject) => {
+            t.addEventListener("complete", (e) => resolve());
+            t.addEventListener("error", (e) => reject());
+            t.commit();
+        })
     }
 };
 
