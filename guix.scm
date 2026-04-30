@@ -31,6 +31,26 @@
               (string-contains file my-string))
             (list ".git" ".dir-locals.el" "guix.scm"))))
 
+(define guile-hoot*
+  (let ((commit "54b0b68fa7ec246d538e27384d8f6cd02ce89f80"))
+    (package
+      (inherit guile-hoot)
+      (version (string-append (package-version guile-hoot)
+                              "-1." (string-take commit 7)))
+      (source (origin
+                (method git-fetch)
+                (uri (git-reference
+                       (url "https://codeberg.org/spritely/hoot.git")
+                       (commit commit)))
+                (sha256
+                 (base32
+                  "003ha3nq5sfb346ky61v2zxkca8w7189z8fn0g76l9xw71vs5pw4"))))
+      (arguments '(#:tests? #f))
+      (native-search-paths
+       (list (search-path-specification
+               (variable "HOOT_LOAD_PATH")
+               (files (list "share/guile-hoot/site"))))))))
+
 (package
   (name "guile-goblins")
   (version "0.18.0-git")
@@ -48,7 +68,7 @@
      ,#~(list "GUILE_AUTO_COMPILE=0")))
   (native-inputs
    (list autoconf automake pkg-config texinfo))
-  (inputs (list guile-next guile-hoot))
+  (inputs (list guile-next guile-hoot*))
   (propagated-inputs
    (list guile-fibers guile-gnutls guile-websocket guile-bstructs))
   (synopsis "Transactional, distributed object programming environment")

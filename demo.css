@@ -1,0 +1,20 @@
+.editor {
+    font-family: monospace;
+    font-size: 2em;
+}
+
+.editor-node:focus {
+    background: #4ec8ff;
+}
+
+/* .editor-atom { */
+/*     padding: .1rem; */
+/* } */
+
+/* .editor-cons::before { */
+/*     content: "("; */
+/* } */
+
+/* .editor-cons::after { */
+/*     content: ")"; */
+/* } */
