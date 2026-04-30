@@ -10,6 +10,7 @@ async function load() {
       element: {
         value(elem) { return elem.value; },
         setValue(elem, value) { elem.value = value; },
+        innerText: (elem) => elem.innerText,
         setAttribute(elem, name, value) { elem.setAttribute(name, value); },
         removeAttribute(elem, name) { elem.removeAttribute(name); },
         appendChild(parent, child) { return parent.appendChild(child); },

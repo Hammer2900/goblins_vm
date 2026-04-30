@@ -43,6 +43,7 @@
             tree-wrap
             tree-open
             tree-insert-atom
+            tree-delete
             tree-forward-delete
             tree-backward-delete
             tree->sexp
@@ -515,6 +516,26 @@
                     (nodes (hashmap-set nodes parent-id parent)))
                (values (make-tree root nodes) new-id))))))))))
 
+(define (tree-delete tree id)
+  (match tree
+    (($ <tree> root nodes)
+     (let* ((node (hashmap-ref nodes id))
+            (parent-id (node-parent node)))
+       (match (hashmap-ref nodes parent-id)
+         (#f (error "deleting root node unimplemented"))
+         (($ <node:compound> grandparent-id type children)
+          (let* ((children (let lp ((children children))
+                             (match children
+                               (() (error "no such child" id))
+                               ((child . children)
+                                (if (eqv? child id)
+                                    children
+                                    (cons child (lp children)))))))
+                 (parent (make-compound-node grandparent-id type children))
+                 (node (set-node-parent node #f))
+                 (nodes (hashmap-set nodes parent-id parent))
+                 (nodes (hashmap-set nodes id node)))
+            (make-tree root nodes))))))))
 
 (define (tree-forward-delete tree id)
   (match tree
@@ -542,46 +563,41 @@
                           (call-with-values (lambda () (lp children child))
                             (lambda (children focus-id)
                               (values (cons child children) focus-id))))))))
-            (lambda (children focus-id)
-              (let* ((parent (make-compound-node grandparent-id type children))
-                     ;; Unsure if we should do this as it would make
-                     ;; deletion not constant time.  Maybe we should
-                     ;; periodically GC trees to shake out all the
-                     ;; unreachable nodes.  By not deleting we also
-                     ;; get constant time cut/paste since all the
-                     ;; nodes are still in the graph.
-                     ;;
-                     ;; ;; Recursively remove entire subtree.
-                     ;; (nodes (let lp ((id id) (nodes nodes))
-                     ;;          (match (hashmap-ref nodes id)
-                     ;;            ((? atom-node?)
-                     ;;             (hashmap-remove nodes id))
-                     ;;            (($ <node:compound> _ _ children)
-                     ;;             (fold lp (hashmap-remove nodes id) children)))))
-                     (nodes (hashmap-set nodes id (set-node-parent node #f)))
-                     (nodes (hashmap-set nodes parent-id parent)))
-                (values (make-tree root nodes) focus-id)))))))
+             (lambda (children focus-id)
+               (let* ((parent (make-compound-node grandparent-id type children))
+                      ;; Unsure if we should do this as it would make
+                      ;; deletion not constant time.  Maybe we should
+                      ;; periodically GC trees to shake out all the
+                      ;; unreachable nodes.  By not deleting we also
+                      ;; get constant time cut/paste since all the
+                      ;; nodes are still in the graph.
+                      ;;
+                      ;; ;; Recursively remove entire subtree.
+                      ;; (nodes (let lp ((id id) (nodes nodes))
+                      ;;          (match (hashmap-ref nodes id)
+                      ;;            ((? atom-node?)
+                      ;;             (hashmap-remove nodes id))
+                      ;;            (($ <node:compound> _ _ children)
+                      ;;             (fold lp (hashmap-remove nodes id) children)))))
+                      (nodes (hashmap-set nodes id (set-node-parent node #f)))
+                      (nodes (hashmap-set nodes parent-id parent)))
+                 (values (make-tree root nodes) focus-id)))))))
        (($ <node:compound> _ _ (first-child . _))
         (values tree first-child))))))
 
 (define (tree-backward-delete tree id)
-  (pk 'backward-delete id)
   (match tree
     (($ <tree> root nodes)
      (let ((parent-id (node-parent (hashmap-ref nodes id))))
        (match (hashmap-ref nodes parent-id)
          (($ <node:compound> grandparent-id type children)
-          (pk 'children children)
           (call-with-values
               (lambda ()
                 (match children
                   (((? (lambda (child) (eqv? child id)) child) . _)
-                   (pk 'foo)
                    (values children #f))
                   ((child . children)
-                   (pk 'bar)
                    (let lp ((children children) (prev child))
-                     (pk 'lp children prev)
                      (match children
                        (() (error "no such child" id))
                        ((child . rest)
@@ -591,7 +607,6 @@
                               (lambda (children target-id)
                                 (values (cons prev children) target-id))))))))))
             (lambda (children* target-id)
-              (pk 'done children* target-id)
               (if (eq? children* children)
                   (values tree #f)      ; no change
                   (let* ((target (hashmap-ref nodes target-id))
@@ -599,85 +614,3 @@
                          (nodes (hashmap-set nodes target-id (set-node-parent target #f)))
                          (nodes (hashmap-set nodes parent-id parent)))
                     (values (make-tree root nodes) target-id)))))))))))
-
-;; (define (tree-insert-before tree id)
-;;   (match tree
-;;     (($ <tree> root nodes)
-;;      (let* ((loc (pk 'loc (hashmap-ref nodes id))))
-;;        (match (node-parent loc)
-;;          (#f (error "unimplemented"))
-;;          (parent-id
-;;           (match (hashmap-ref nodes parent-id)
-;;             (($ <node:cons> grandparent-id car cdr)
-;;              (if (eq? id car)
-;;                  (let* ((cons-id (fresh-id))
-;;                         (car-id (fresh-id))
-;;                         (cdr-id parent-id)
-;;                         (car-node (make-atom-node cons-id "_"))
-;;                         (cons-node (make-cons-node grandparent-id car-id cdr-id))
-;;                         (nodes (hashmap-set nodes car-id car-node))
-;;                         (nodes (hashmap-set nodes cons-id cons-node)))
-;;                    (values (if (eqv? parent-id root)
-;;                                (make-tree cons-id nodes)
-;;                                (let* ((grandparent (hashmap-ref nodes grandparent-id))
-;;                                       (grandparent (set-node-child grandparent parent-id cons-id)))
-;;                                  (make-tree root (hashmap-set nodes grandparent-id grandparent))))
-;;                            car-id))
-;;                  (error "unimplemented"))))))))))
-
-;; (define (tree-delete-backward tree id)
-;;   (match tree
-;;     (($ <tree> root nodes)
-;;      (match (hashmap-ref nodes id)
-;;        (($ <node:atom> parent-id value)
-;;         (match (hashmap-ref nodes parent-id)
-;;           (#f (values tree id))
-;;           (($ <node:cons> grandparent-id car cdr)
-;;            ;; A backward delete from an empty list in car position deletes
-;;            ;; itself and its parent rather than the previous node.
-;;            (if (eqv? id car)
-;;                (if (null? value)
-;;                    (let* ((grandparent-node (hashmap-ref nodes grandparent-id))
-;;                           (grandparent-node (set-node-child grandparent-node parent-id cdr))
-;;                           (cdr-node (hashmap-ref nodes cdr))
-;;                           (cdr-node (set-node-parent cdr-node grandparent-id))
-;;                           (nodes (hashmap-set nodes cdr cdr-node))
-;;                           (nodes (hashmap-remove nodes parent-id))
-;;                           (nodes (hashmap-remove nodes id)))
-;;                      (values (make-tree root nodes) grandparent-id))
-;;                    (tree-delete-backward tree (tree-prev tree id)))
-;;                ;; in cdr position, the car and parent nodes are deleted.
-;;                (let* ((grandparent-node (hashmap-ref nodes grandparent-id))
-;;                       (grandparent-node (set-node-child grandparent-node parent-id cdr))
-;;                       (cdr-node (hashmap-ref nodes cdr))
-;;                       (cdr-node (set-node-parent cdr-node grandparent-id))
-;;                       (nodes (hashmap-set nodes cdr cdr-node))
-;;                       (nodes (hashmap-remove nodes parent-id))
-;;                       (nodes (hashmap-remove nodes car)))
-;;                  (values (make-tree root nodes) grandparent-id)))))))))
-
-
-;;   (match (tree-prev tree id)
-;;     (#f (values tree #f))
-;;     (prev
-;;      (match (tree-ref tree prev)
-;;        ((? cons-node?)
-;;         (values tree prev))
-;;        ((? atom-node?)
-;;         (values ))))))
-
-
-;; (make-compound-node 'list '(1 2 3))
-
-;; (<()> . ()) -> ()
-;; (() . <()>) -> ()
-
-;; <(a . (b . ()))> -> (a . (b . ()))
-;; (<a> . (b . ())) -> (a . (b . ()))
-
-;; (a . <(b . ())>) -> (b . ())
-;; (a . (<b> . ())) -> (b . ())
-
-;; (a . (b . <()>)) -> (a . ())
-
-;; (+ 1 (* 2 3 (- 4 5)) 6)

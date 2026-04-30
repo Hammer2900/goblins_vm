@@ -11,6 +11,7 @@
             replace-with!
             element-value
             set-element-value!
+            element-inner-text
             set-attribute!
             remove-attribute!
             focus!
@@ -53,6 +54,9 @@
 (define-foreign set-element-value!
   "element" "setValue"
   (ref extern) (ref string) -> none)
+(define-foreign element-inner-text
+  "element" "innerText"
+  (ref extern) -> (ref string))
 (define-foreign set-attribute!
   "element" "setAttribute"
   (ref extern) (ref string) (ref string) -> none)
