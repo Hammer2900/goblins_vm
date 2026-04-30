@@ -22,6 +22,7 @@
             event-target
             keyboard-event-key
             keyboard-event-alt-key?
+            keyboard-event-ctrl-key?
 
             shtml->dom))
 
@@ -85,6 +86,11 @@
   (ref extern) -> i32)
 (define (keyboard-event-alt-key? e)
   (eq? (%keyboard-event-alt-key? e) 1))
+(define-foreign %keyboard-event-ctrl-key?
+  "event" "keyboardCtrlKey"
+  (ref extern) -> i32)
+(define (keyboard-event-ctrl-key? e)
+  (eq? (%keyboard-event-ctrl-key? e) 1))
 
 (define procedure->external/cached
   (let ((cache (make-weak-key-hashtable)))

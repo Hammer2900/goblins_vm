@@ -4,6 +4,7 @@
   #:use-module (goblins utils hashmap)
   #:use-module (ice-9 match)
   #:use-module (ice-9 textual-ports)
+  #:use-module ((srfi srfi-1) #:select (fold))
   #:use-module (srfi srfi-9)
   #:use-module (srfi srfi-9 gnu)
   #:export (<node:atom>
@@ -12,11 +13,17 @@
             atom-node-parent
             atom-node-ref
 
-            <node:cons>
-            node-cons?
-            make-cons-node
-            cons-node-car
-            cons-node-cdr
+            ;; <node:cons>
+            ;; node-cons?
+            ;; make-cons-node
+            ;; cons-node-car
+            ;; cons-node-cdr
+
+            <node:compound>
+            compound-node?
+            compound-node-parent
+            compound-node-type
+            compound-node-children
 
             node-parent
             set-node-parent
@@ -30,8 +37,14 @@
             tree-set
             tree-next
             tree-prev
+            tree-parent
+            tree-next-sexp
+            tree-prev-sexp
             tree-wrap
-            tree-insert-before
+            tree-open
+            tree-insert-atom
+            tree-forward-delete
+            tree-backward-delete
             tree->sexp
             sexp->tree))
 
@@ -209,42 +222,62 @@
   (parent atom-node-parent)
   (value atom-node-ref))
 
-(define-record-type <node:cons>
-  (make-cons-node parent car cdr)
-  cons-node?
-  (parent cons-node-parent)
-  (car cons-node-car)
-  (cdr cons-node-cdr))
+(define-record-type <node:compound>
+  (make-compound-node parent type children)
+  compound-node?
+  (parent compound-node-parent)
+  (type compound-node-type)
+  (children compound-node-children))
 
-(define (null-atom-node? node)
-  (match node
-    (($ <node:atom> _ ()) #t)
-    (_ #f)))
+;; (define-record-type <node:cons>
+;;   (make-cons-node parent car cdr)
+;;   cons-node?
+;;   (parent cons-node-parent)
+;;   (car cons-node-car)
+;;   (cdr cons-node-cdr))
+
+;; (define (null-atom-node? node)
+;;   (match node
+;;     (($ <node:atom> _ ()) #t)
+;;     (_ #f)))
 
 (define (node-parent node)
   (match node
     (($ <node:atom> parent)
      parent)
-    (($ <node:cons> parent)
+    (($ <node:compound> parent)
      parent)))
 
 (define (set-node-parent node parent)
   (match node
     (($ <node:atom> _ value)
      (make-atom-node parent value))
-    (($ <node:cons> _ car cdr)
-     (make-cons-node parent car cdr))))
+    (($ <node:compound> _ type children)
+     (make-compound-node parent type children))))
 
-(define (set-node-child node old new)
-  (match node
-    (($ <node:cons> parent car cdr)
-     (cond
-      ((eq? old car)
-       (make-cons-node parent new cdr))
-      ((eq? old cdr)
-       (make-cons-node parent car new))
-      (else
-       (error "not a child" old))))))
+(define (replace-child parent child new)
+  (match parent
+    (($ <node:compound> parent type children)
+     (make-compound-node
+      parent type
+      (let lp ((children children))
+        (match children
+          (() (error "no such child" child))
+          ((child* . children)
+           (if (eq? child child*)
+               (cons new children)
+               (cons child* (lp children))))))))))
+
+;; (define (set-node-child node old new)
+;;   (match node
+;;     (($ <node:cons> parent car cdr)
+;;      (cond
+;;       ((eq? old car)
+;;        (make-cons-node parent new cdr))
+;;       ((eq? old cdr)
+;;        (make-cons-node parent car new))
+;;       (else
+;;        (error "not a child" old))))))
 
 ;; Unique id generator
 
@@ -264,13 +297,13 @@
   (root tree-root)
   (nodes tree-nodes))
 
-(define* (make-empty-tree #:optional root)
-  (make-tree root (hashvmap)))
+;; (define* (make-empty-tree #:optional root)
+;;   (make-tree root (hashvmap)))
 
-(define (set-tree-root tree root)
-  (match tree
-    (($ <tree> _ nodes)
-     (make-tree root nodes))))
+;; (define (set-tree-root tree root)
+;;   (match tree
+;;     (($ <tree> _ nodes)
+;;      (make-tree root nodes))))
 
 (define (tree-ref tree id)
   (hashmap-ref (tree-nodes tree) id))
@@ -284,153 +317,357 @@
 (define (tree->sexp tree)
   (match tree
     (($ <tree> root nodes)
-     (let lp ((id 0))
-       (match (tree-ref nodes id)
+     (let lp ((id root))
+       (match (hashmap-ref nodes id)
          (($ <node:atom> _ value)
           value)
-         (($ <node:cons> _ car cdr)
-          (cons (lp car) (lp cdr))))))))
+         (($ <node:compound> _ 'list children)
+          (map lp children)))))))
 
 ;; TODO: tree->syntax
 
 (define (sexp->tree exp)
+  (define (walk nodes exp id parent)
+    (match exp
+      ((children ...)
+       (let* ((ids (map (lambda (_) (fresh-id)) children))
+              (node (make-compound-node parent 'list ids)))
+         (fold (lambda (child child-id nodes)
+                 (walk nodes child child-id id))
+               (hashmap-set nodes id node) children ids)))
+      (_ (hashmap-set nodes id (make-atom-node parent exp)))))
   (let ((root (fresh-id)))
-    (let lp ((tree (make-empty-tree root)) (exp exp) (id root) (parent #f))
-      (match exp
-        ((car . cdr)
-         (let* ((car-id (fresh-id))
-                (cdr-id (fresh-id))
-                (node (make-cons-node parent car-id cdr-id)))
-           (lp (lp (tree-set tree id node) car car-id id)
-               cdr cdr-id id)))
-        (_ (tree-set tree id (make-atom-node parent exp)))))))
+    (make-tree root (walk (hashvmap) exp root #f))))
 
 ;; Forward and backward pre-order traversal of trees.
 (define (tree-next tree id)
   (let lp ((id id) (prev #f))
     (and id
          (match (tree-ref tree id)
-           (($ <node:atom> parent)
+           ((or ($ <node:atom> parent)
+                ($ <node:compound> parent _ ()))
             (lp parent id))
-           (($ <node:cons> parent car cdr)
+           (($ <node:compound> parent type children)
             (if prev
-                (if (eqv? prev car)
-                    cdr
-                    (lp parent id))
-                car))))))
+                (let find ((children children))
+                  (match children
+                    (()
+                     (error "no such child" prev))
+                    ((child)
+                     (if (eqv? child prev)
+                         (lp parent id)
+                         (error "no such child" prev)))
+                    ((and (_ next . _) (child . children))
+                     (if (eqv? child prev)
+                         next
+                         (find children)))))
+                (car children)))))))
 
 (define (tree-prev tree id)
-  (let lp ((id id) (prev #f))
+  (let lp ((id id) (next #f))
     (and id
          (match (tree-ref tree id)
            (($ <node:atom> parent)
             (lp parent id))
-           (($ <node:cons> parent car cdr)
-            (if prev
-                (if (eqv? prev car)
-                    id
-                    ;; Descend the subtree to find the rightmost node.
-                    (let descend ((id car))
-                      (match (tree-ref tree id)
-                        (($ <node:atom>)
-                         id)
-                        (($ <node:cons> _ _ cdr)
-                         (descend cdr)))))
+           (($ <node:compound> parent type children)
+            (if next
+                (let find ((children children) (prev #f))
+                  (match children
+                    (()
+                     (error "no such child" next))
+                    ((child . children)
+                     (if (eqv? child next)
+                         (if prev
+                             ;; Descend the subtree to find the rightmost node.
+                             (let descend ((id prev))
+                               (match (tree-ref tree id)
+                                 ((or ($ <node:atom>)
+                                      ($ <node:compound> _ _ ()))
+                                  id)
+                                 (($ <node:compound> _ _ (_ ... last))
+                                  (descend last))))
+                             id)
+                         (find children child)))))
                 (lp parent id)))))))
 
-;; Wrap node in a one element list.
+;; Test
+
+;; (let* ((tree (sexp->tree '(+ 1 (* 2 3 (- 4 5)) 6)))
+;;        (forward (let lp ((id (tree-root tree)))
+;;                   (let ((next (tree-next tree id)))
+;;                     (if next
+;;                         (cons id (lp next))
+;;                         (list id)))))
+;;        (last (match forward ((_ ... last) last)))
+;;        (backward (let lp ((id last))
+;;                    (let ((prev (tree-prev tree id)))
+;;                      (if prev
+;;                          (cons id (lp prev))
+;;                          (list id))))))
+;;   (equal? forward (reverse backward)))
+
+(define (tree-parent tree id)
+  (node-parent (tree-ref tree id)))
+
+(define (tree-next-sexp tree id)
+  (match (tree-parent tree id)
+    (#f #f)
+    (parent-id
+     (match (tree-ref tree parent-id)
+       (($ <node:compound> _ _ children)
+        (let lp ((children children))
+          (match children
+            ((_)
+             (tree-next-sexp tree parent-id))
+            ((and (_ next . _) (child . children))
+             (if (eqv? child id)
+                 next
+                 (lp children))))))))))
+
+(define (tree-prev-sexp tree id)
+  (match (tree-parent tree id)
+    (#f #f)
+    (parent-id
+     (match (tree-ref tree parent-id)
+       (($ <node:compound> _ _ children)
+        (let lp ((children children) (prev #f))
+          (match children
+            ((child . children)
+             (if (eqv? child id)
+                 (or prev parent-id)
+                 (lp children child))))))))))
+
 (define (tree-wrap tree id)
   (match tree
     (($ <tree> root nodes)
      (let* ((node (hashmap-ref nodes id))
             (parent-id (node-parent node))
-            (car-id id)
-            (cdr-id (fresh-id))
-            (cons-id (fresh-id))
-            (car-node (set-node-parent node cons-id))
-            (cdr-node (make-atom-node cons-id '()))
-            (cons-node (make-cons-node parent-id car-id cdr-id))
-            (nodes (hashmap-set nodes id car-node))
-            (nodes (hashmap-set nodes cdr-id cdr-node))
-            (nodes (hashmap-set nodes cons-id cons-node)))
-       ;; Either replace the root node with the new cons node or splice
-       ;; the new cons node into the middle of the tree somewhere.
+            (wrapper-id (fresh-id))
+            (wrapper (make-compound-node parent-id 'list (list id)))
+            (nodes (hashmap-set nodes wrapper-id wrapper))
+            (nodes (hashmap-set nodes id (set-node-parent node wrapper-id))))
+       ;; Either replace the root node with the new wrapper node or
+       ;; splice the new wrapper node into the middle of the tree
+       ;; somewhere.
        (values (if (eqv? id root)
-                   (make-tree cons-id nodes)
+                   (make-tree wrapper-id nodes)
                    (let* ((parent (hashmap-ref nodes parent-id))
-                          (parent (set-node-child parent id cons-id)))
+                          (parent (replace-child parent id wrapper-id)))
                      (make-tree root (hashmap-set nodes parent-id parent))))
-               cons-id)))))
+               wrapper-id)))))
 
-(define (tree-insert-before tree id)
-  (match tree
-    (($ <tree> root nodes)
-     (let* ((loc (pk 'loc (hashmap-ref nodes id))))
-       (match (node-parent loc)
-         (#f (error "unimplemented"))
-         (parent-id
-          (match (hashmap-ref nodes parent-id)
-            (($ <node:cons> grandparent-id car cdr)
-             (if (eq? id car)
-                 (let* ((cons-id (fresh-id))
-                        (car-id (fresh-id))
-                        (cdr-id parent-id)
-                        (car-node (make-atom-node cons-id "_"))
-                        (cons-node (make-cons-node grandparent-id car-id cdr-id))
-                        (nodes (hashmap-set nodes car-id car-node))
-                        (nodes (hashmap-set nodes cons-id cons-node)))
-                   (values (if (eqv? parent-id root)
-                               (make-tree cons-id nodes)
-                               (let* ((grandparent (hashmap-ref nodes grandparent-id))
-                                      (grandparent (set-node-child grandparent parent-id cons-id)))
-                                 (make-tree root (hashmap-set nodes grandparent-id grandparent))))
-                           car-id))
-                 (error "unimplemented"))))))))))
-
-(define (tree-delete-backward tree id)
+(define (tree-open tree id)
   (match tree
     (($ <tree> root nodes)
      (match (hashmap-ref nodes id)
-       (($ <node:atom> parent-id value)
+       (($ <node:compound> parent-id type children)
+        (let* ((new-id (fresh-id))
+               (new (make-compound-node id 'list '()))
+               (parent (make-compound-node parent-id type (cons new-id children)))
+               (nodes (hashmap-set nodes new-id new))
+               (nodes (hashmap-set nodes id parent)))
+          (values (make-tree root nodes) new-id)))
+       (node
+        (let ((parent-id (node-parent node)))
+          (match (hashmap-ref nodes parent-id)
+            (($ <node:compound> _ _ children)
+             (let* ((new-id (fresh-id))
+                    (new (make-compound-node parent-id 'list '()))
+                    (parent (make-compound-node
+                             id 'list
+                             (let lp ((children children))
+                               (match children
+                                 ((child . children)
+                                  (if (eqv? child id)
+                                      (cons* child new-id children)
+                                      (cons child (lp children))))))))
+                    (nodes (hashmap-set nodes new-id new))
+                    (nodes (hashmap-set nodes parent-id parent)))
+               (values (make-tree root nodes) new-id))))))))))
+
+;; TODO: This is almost exactly the same as tree-open. Refactor.
+(define (tree-insert-atom tree id)
+  (match tree
+    (($ <tree> root nodes)
+     (match (hashmap-ref nodes id)
+       (($ <node:compound> parent-id type children)
+        (let* ((new-id (fresh-id))
+               (new (make-atom-node id ""))
+               (parent (make-compound-node parent-id type (cons new-id children)))
+               (nodes (hashmap-set nodes new-id new))
+               (nodes (hashmap-set nodes id parent)))
+          (values (make-tree root nodes) new-id)))
+       (node
+        (let ((parent-id (node-parent node)))
+          (match (hashmap-ref nodes parent-id)
+            (($ <node:compound> _ _ children)
+             (let* ((new-id (fresh-id))
+                    (new (make-atom-node parent-id ""))
+                    (parent (make-compound-node
+                             id 'list
+                             (let lp ((children children))
+                               (match children
+                                 ((child . children)
+                                  (if (eqv? child id)
+                                      (cons* child new-id children)
+                                      (cons child (lp children))))))))
+                    (nodes (hashmap-set nodes new-id new))
+                    (nodes (hashmap-set nodes parent-id parent)))
+               (values (make-tree root nodes) new-id))))))))))
+
+
+(define (tree-forward-delete tree id)
+  (match tree
+    (($ <tree> root nodes)
+     (match (hashmap-ref nodes id)
+       ((and node (or ($ <node:atom> parent-id)
+                      ($ <node:compound> parent-id _ ())))
+        ;; TODO: Handle deletion of root node.
         (match (hashmap-ref nodes parent-id)
-          (#f (values tree id))
-          (($ <node:cons> grandparent-id car cdr)
-           ;; A backward delete from an empty list in car position deletes
-           ;; itself and its parent rather than the previous node.
-           (if (eqv? id car)
-               (if (null? value)
-                   (let* ((grandparent-node (hashmap-ref nodes grandparent-id))
-                          (grandparent-node (set-node-child grandparent-node parent-id cdr))
-                          (cdr-node (hashmap-ref nodes cdr))
-                          (cdr-node (set-node-parent cdr-node grandparent-id))
-                          (nodes (hashmap-set nodes cdr cdr-node))
-                          (nodes (hashmap-remove nodes parent-id))
-                          (nodes (hashmap-remove nodes id)))
-                     (values (make-tree root nodes) grandparent-id))
-                   (tree-delete-backward tree (tree-prev tree id)))
-               ;; in cdr position, the car and parent nodes are deleted.
-               (let* ((grandparent-node (hashmap-ref nodes grandparent-id))
-                      (grandparent-node (set-node-child grandparent-node parent-id cdr))
-                      (cdr-node (hashmap-ref nodes cdr))
-                      (cdr-node (set-node-parent cdr-node grandparent-id))
-                      (nodes (hashmap-set nodes cdr cdr-node))
-                      (nodes (hashmap-remove nodes parent-id))
-                      (nodes (hashmap-remove nodes car)))
-                 (values (make-tree root nodes) grandparent-id)))))))))
+          (($ <node:compound> grandparent-id type children)
+           (call-with-values
+               (lambda ()
+                 (let lp ((children children) (prev #f))
+                   (match children
+                     ((child)
+                      (if (eqv? child id)
+                          (values '() (or prev parent-id))
+                          ;; This shouldn't happen.
+                          (error "no such child" id)))
+                     ((child . children)
+                      (if (eqv? child id)
+                          (match children
+                            ((next . _)
+                             (values children next)))
+                          (call-with-values (lambda () (lp children child))
+                            (lambda (children focus-id)
+                              (values (cons child children) focus-id))))))))
+            (lambda (children focus-id)
+              (let* ((parent (make-compound-node grandparent-id type children))
+                     ;; Unsure if we should do this as it would make
+                     ;; deletion not constant time.  Maybe we should
+                     ;; periodically GC trees to shake out all the
+                     ;; unreachable nodes.  By not deleting we also
+                     ;; get constant time cut/paste since all the
+                     ;; nodes are still in the graph.
+                     ;;
+                     ;; ;; Recursively remove entire subtree.
+                     ;; (nodes (let lp ((id id) (nodes nodes))
+                     ;;          (match (hashmap-ref nodes id)
+                     ;;            ((? atom-node?)
+                     ;;             (hashmap-remove nodes id))
+                     ;;            (($ <node:compound> _ _ children)
+                     ;;             (fold lp (hashmap-remove nodes id) children)))))
+                     (nodes (hashmap-set nodes id (set-node-parent node #f)))
+                     (nodes (hashmap-set nodes parent-id parent)))
+                (values (make-tree root nodes) focus-id)))))))
+       (($ <node:compound> _ _ (first-child . _))
+        (values tree first-child))))))
+
+(define (tree-backward-delete tree id)
+  (pk 'backward-delete id)
+  (match tree
+    (($ <tree> root nodes)
+     (let ((parent-id (node-parent (hashmap-ref nodes id))))
+       (match (hashmap-ref nodes parent-id)
+         (($ <node:compound> grandparent-id type children)
+          (pk 'children children)
+          (call-with-values
+              (lambda ()
+                (match children
+                  (((? (lambda (child) (eqv? child id)) child) . _)
+                   (pk 'foo)
+                   (values children #f))
+                  ((child . children)
+                   (pk 'bar)
+                   (let lp ((children children) (prev child))
+                     (pk 'lp children prev)
+                     (match children
+                       (() (error "no such child" id))
+                       ((child . rest)
+                        (if (eqv? child id)
+                            (values children prev)
+                            (call-with-values (lambda () (lp rest child))
+                              (lambda (children target-id)
+                                (values (cons prev children) target-id))))))))))
+            (lambda (children* target-id)
+              (pk 'done children* target-id)
+              (if (eq? children* children)
+                  (values tree #f)      ; no change
+                  (let* ((target (hashmap-ref nodes target-id))
+                         (parent (make-compound-node grandparent-id type children*))
+                         (nodes (hashmap-set nodes target-id (set-node-parent target #f)))
+                         (nodes (hashmap-set nodes parent-id parent)))
+                    (values (make-tree root nodes) target-id)))))))))))
+
+;; (define (tree-insert-before tree id)
+;;   (match tree
+;;     (($ <tree> root nodes)
+;;      (let* ((loc (pk 'loc (hashmap-ref nodes id))))
+;;        (match (node-parent loc)
+;;          (#f (error "unimplemented"))
+;;          (parent-id
+;;           (match (hashmap-ref nodes parent-id)
+;;             (($ <node:cons> grandparent-id car cdr)
+;;              (if (eq? id car)
+;;                  (let* ((cons-id (fresh-id))
+;;                         (car-id (fresh-id))
+;;                         (cdr-id parent-id)
+;;                         (car-node (make-atom-node cons-id "_"))
+;;                         (cons-node (make-cons-node grandparent-id car-id cdr-id))
+;;                         (nodes (hashmap-set nodes car-id car-node))
+;;                         (nodes (hashmap-set nodes cons-id cons-node)))
+;;                    (values (if (eqv? parent-id root)
+;;                                (make-tree cons-id nodes)
+;;                                (let* ((grandparent (hashmap-ref nodes grandparent-id))
+;;                                       (grandparent (set-node-child grandparent parent-id cons-id)))
+;;                                  (make-tree root (hashmap-set nodes grandparent-id grandparent))))
+;;                            car-id))
+;;                  (error "unimplemented"))))))))))
+
+;; (define (tree-delete-backward tree id)
+;;   (match tree
+;;     (($ <tree> root nodes)
+;;      (match (hashmap-ref nodes id)
+;;        (($ <node:atom> parent-id value)
+;;         (match (hashmap-ref nodes parent-id)
+;;           (#f (values tree id))
+;;           (($ <node:cons> grandparent-id car cdr)
+;;            ;; A backward delete from an empty list in car position deletes
+;;            ;; itself and its parent rather than the previous node.
+;;            (if (eqv? id car)
+;;                (if (null? value)
+;;                    (let* ((grandparent-node (hashmap-ref nodes grandparent-id))
+;;                           (grandparent-node (set-node-child grandparent-node parent-id cdr))
+;;                           (cdr-node (hashmap-ref nodes cdr))
+;;                           (cdr-node (set-node-parent cdr-node grandparent-id))
+;;                           (nodes (hashmap-set nodes cdr cdr-node))
+;;                           (nodes (hashmap-remove nodes parent-id))
+;;                           (nodes (hashmap-remove nodes id)))
+;;                      (values (make-tree root nodes) grandparent-id))
+;;                    (tree-delete-backward tree (tree-prev tree id)))
+;;                ;; in cdr position, the car and parent nodes are deleted.
+;;                (let* ((grandparent-node (hashmap-ref nodes grandparent-id))
+;;                       (grandparent-node (set-node-child grandparent-node parent-id cdr))
+;;                       (cdr-node (hashmap-ref nodes cdr))
+;;                       (cdr-node (set-node-parent cdr-node grandparent-id))
+;;                       (nodes (hashmap-set nodes cdr cdr-node))
+;;                       (nodes (hashmap-remove nodes parent-id))
+;;                       (nodes (hashmap-remove nodes car)))
+;;                  (values (make-tree root nodes) grandparent-id)))))))))
 
 
-  (match (tree-prev tree id)
-    (#f (values tree #f))
-    (prev
-     (match (tree-ref tree prev)
-       ((? cons-node?)
-        (values tree prev))
-       ((? atom-node?)
-        (values ))))))
+;;   (match (tree-prev tree id)
+;;     (#f (values tree #f))
+;;     (prev
+;;      (match (tree-ref tree prev)
+;;        ((? cons-node?)
+;;         (values tree prev))
+;;        ((? atom-node?)
+;;         (values ))))))
 
 
 ;; (make-compound-node 'list '(1 2 3))
-
 
 ;; (<()> . ()) -> ()
 ;; (() . <()>) -> ()
@@ -442,6 +679,5 @@
 ;; (a . (<b> . ())) -> (b . ())
 
 ;; (a . (b . <()>)) -> (a . ())
-
 
 ;; (+ 1 (* 2 3 (- 4 5)) 6)

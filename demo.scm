@@ -1,5 +1,6 @@
 (use-modules (dom)
              (editor)
+             (fibers scheduler)
              (hoot ffi)
              (ice-9 match))
 
@@ -13,31 +14,36 @@
     (when id
       (focus! (get-element-by-id (exp-id id)))))
   (define (edit id orig)
-    (define node )
     (match (tree-ref *tree* id)
       (($ <node:atom> parent value)
+       (define (commit)
+         (let* ((value (element-value new))
+                (new* (shtml->dom (node-element id "atom" (list value)))))
+           (set! *tree* (tree-set *tree* id (make-atom-node parent value)))
+           (replace-with! new new*)
+           (focus! new*)))
        (define new
          (shtml->dom
-          `(input (@ (type "text")
+          `(input (@ (class "editor-node editor-atom")
+                     (type "text")
                      (value ,(match value
                                ((? number? x) (number->string x))
                                ((? symbol? sym) (symbol->string sym))
                                (str str)))
+                     (focusout ,(lambda (e) (commit)))
                      (keydown ,(lambda (e)
+                                 (pk 'keydown e)
                                  (stop-propagation! e)
                                  (match (keyboard-event-key e)
                                    ("Enter"
-                                    (let* ((value (element-value new))
-                                           (new* (shtml->dom (node-element id "atom" (list value)))))
-                                      (set! *tree* (tree-set *tree* id (make-atom-node parent value)))
-                                      (replace-with! new new*)
-                                      (focus! new*)
-                                      (prevent-default! e)))
+                                    (commit)
+                                    (prevent-default! e))
                                    ("Escape"
                                     (replace-with! new orig)
                                     (focus! orig)
                                     (prevent-default! e))
-                                   (_ (values)))))))))
+                                   (_ (values))))))
+                  ,value)))
        (replace-with! orig new)
        (focus! new))))
   (define (wrap id elem)
@@ -48,62 +54,107 @@
           (replace-with! elem new-elem)
           (focus! new-elem)))))
   (define (insert id elem)
-    (pk 'insert id)
-    (call-with-values (lambda () (tree-insert-before *tree* id))
+    (call-with-values (lambda () (tree-insert-atom *tree* id))
       (lambda (tree new-id)
-        (let ((new-elem (shtml->dom (tree->shtml tree new-id))))
+        (let* ((parent-id (tree-parent tree new-id))
+               (new-elem (shtml->dom (tree->shtml tree parent-id))))
           (set! *tree* tree)
-          (replace-with! elem new-elem)
-          (focus! new-elem)))))
+          (replace-with! (get-element-by-id (exp-id parent-id)) new-elem)
+          (edit new-id (get-element-by-id (exp-id new-id)))))))
   (define (open id elem)
-    (pk 'todo:open))
+    (call-with-values (lambda () (tree-open *tree* id))
+      (lambda (tree new-id)
+        (let* ((parent-id (tree-parent tree new-id))
+               (new-elem (shtml->dom (tree->shtml tree parent-id))))
+          (set! *tree* tree)
+          (replace-with! (get-element-by-id (exp-id parent-id)) new-elem)
+          (focus! (get-element-by-id (exp-id new-id)))))))
+  (define (forward-delete id elem)
+    (let ((parent-id (tree-parent tree id)))
+      (call-with-values (lambda () (tree-forward-delete *tree* id))
+        (lambda (tree focus-id)
+          (unless (eq? tree *tree*)
+            (let ((new-elem (shtml->dom (tree->shtml tree parent-id))))
+              (set! *tree* tree)
+              (replace-with! (get-element-by-id (exp-id parent-id)) new-elem)))
+          (focus! (get-element-by-id (exp-id focus-id)))))))
+  (define (backward-delete id elem)
+    (let ((parent-id (tree-parent tree id)))
+      (call-with-values (lambda () (tree-backward-delete *tree* id))
+        (lambda (tree removed-id)
+          (unless (eq? tree *tree*)
+            (let ((new-elem (shtml->dom (tree->shtml tree parent-id))))
+              (set! *tree* tree)
+              (replace-with! (get-element-by-id (exp-id parent-id)) new-elem)
+              (focus! (get-element-by-id (exp-id id)))))))))
+  (define (delimiter str)
+    `(span (@ (class "editor-delimiter")) ,str))
   (define (node-element id type contents)
     `(span (@ (id ,(exp-id id))
               (class ,(string-append "editor-node editor-" type))
+              ;; (contenteditable ,(if (equal? type "atom") "true" "false"))
               (tabindex "0")
               (click ,(lambda (e)
                         (focus! (event-target e))))
+              ;; (input ,(lambda (e) (pk 'input e)))
               (keydown ,(lambda (e)
                           (stop-propagation! e)
                           (match (pk 'key (keyboard-event-key e))
-                            ("ArrowLeft" (focus-maybe (tree-prev *tree* id)))
-                            ("ArrowRight" (focus-maybe (tree-next *tree* id)))
+                            ("ArrowLeft"
+                             (focus-maybe
+                              (if (keyboard-event-ctrl-key? e)
+                                  (tree-prev-sexp *tree* id)
+                                  (tree-prev *tree* id))))
+                            ("ArrowRight"
+                             (focus-maybe
+                              (if (keyboard-event-ctrl-key? e)
+                                  (tree-next-sexp *tree* id)
+                                  (tree-next *tree* id))))
+                            ("ArrowUp"
+                             (focus-maybe (tree-parent *tree* id)))
                             ("Enter"
                              (match type
-                               ("atom" (edit id (event-target e)))
-                               ("cons" (insert id (event-target e)))
+                               ("atom"
+                                (edit id (event-target e))
+                                (prevent-default! e))
+                               ("cons"
+                                (insert id (event-target e)))
                                (_ (values))))
                             ("("
                              (if (keyboard-event-alt-key? e)
                                  (wrap id (event-target e))
                                  (open id (event-target e))))
+                            (" "
+                             (prevent-default! e)
+                             (insert id (event-target e)))
+                            ("Delete"
+                             (forward-delete id (event-target e)))
+                            ("Backspace"
+                             (backward-delete id (event-target e)))
+                            ((or "Ctrl" "Alt" "Shift")
+                             (values))
                             (_ (values))))))
            ,@contents))
-  (let lp ((node (tree-ref tree root)) (id root))
-    (match node
+  (let lp ((id root))
+    (match (tree-ref tree id)
       (($ <node:atom> _ value)
        (node-element
         id "atom"
         (if (null? value)
             '("()")
             (list value))))
-      ((and node ($ <node:cons>))
+      (($ <node:compound> _ 'list ())
+       (node-element id "compound" (list (delimiter "()"))))
+      (($ <node:compound> _ 'list (first . rest))
        (node-element
-        id "cons"
-        `("("
-          ,@(let lp2 ((node node) (id id) (first? #t))
-              (match node
-                (($ <node:atom> _ ())
-                 (pk 'null id)
-                 (list (node-element id "atom" '(")"))))
-                ((and node ($ <node:cons> _ car cdr))
-                 `(,@(if first?
-                         '()
-                         (list (node-element id "cons" '(" "))))
-                   ,(lp (tree-ref tree car) car)
-                   ,@(lp2 (tree-ref tree cdr) cdr #f)))
-                (node
-                 `(" . " ,(lp node id) ")"))))))))))
+        id "compound"
+        `(,(delimiter "(")
+          ,(lp first)
+          ,@(apply append
+                   (map (lambda (child)
+                          (list " " (lp child)))
+                        rest))
+          ,(delimiter ")")))))))
 
 (define body (document-body))
 
@@ -117,6 +168,6 @@
  body
  (shtml->dom
   `(article
-    (h1 "Text editor demo")
+    (h1 "Structural editor demo")
     (main (@ (class "editor"))
           ,(tree->shtml *tree*)))))

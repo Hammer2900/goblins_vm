@@ -24,7 +24,8 @@ async function load() {
         stopPropagation: (e) => e.stopPropagation(),
         target: (e) => e.target,
         keyboardKey: (e) => e.key,
-        keyboardAltKey: (e) => e.altKey
+        keyboardAltKey: (e) => e.altKey,
+        keyboardCtrlKey: (e) => e.ctrlKey
       }
     }
   });

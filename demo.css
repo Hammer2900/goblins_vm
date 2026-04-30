@@ -1,20 +1,69 @@
+body {
+    font-family: sans;
+}
+
+/* Global editor style */
 .editor {
-    font-family: monospace;
+    font-family: monospace, "Inconsolata";
     font-size: 2em;
 }
 
+/* Highlight currently focused node */
 .editor-node:focus {
+    outline: none;
+}
+.editor-atom:focus, .editor-compound:focus > .editor-delimiter:nth-child(1) {
     background: #4ec8ff;
 }
 
-/* .editor-atom { */
-/*     padding: .1rem; */
-/* } */
+.editor-node {
+    padding: 0.1rem;
+}
 
-/* .editor-cons::before { */
-/*     content: "("; */
-/* } */
+/* Highlight keywords */
+.editor-keyword {
+    font-weight: bold;
+    color: #2152a5;
+}
 
-/* .editor-cons::after { */
-/*     content: ")"; */
-/* } */
+input.editor-atom {
+    font-family: monospace, "Inconsolata";
+    font-size: 100%;
+    background: none;
+    border: none;
+    background-image:none;
+    background-color:transparent;
+    -webkit-box-shadow: none;
+    -moz-box-shadow: none;
+    box-shadow: none;
+}
+
+/* Highlight nearest delimiters */
+.editor-compound:has(> .editor-atom:focus) > .editor-delimiter,
+.editor-compound:focus > .editor-delimiter {
+    font-weight: bold;
+}
+
+/* Rainbow delimiters */
+/* NostalgOS palette https://lospec.com/palette-list/nostalgos-12 */
+.editor-compound .editor-delimiter {
+    color: #21525a;
+}
+.editor-compound .editor-compound .editor-delimiter {
+    color: #eeb24a;
+}
+.editor-compound .editor-compound .editor-compound .editor-delimiter {
+    color: #2152a5;
+}
+.editor-compound .editor-compound .editor-compound .editor-compound .editor-delimiter {
+    color: #dc6250;
+}
+.editor-compound .editor-compound .editor-compound .editor-compound .editor-compound .editor-delimiter {
+    color: #55927f;
+}
+.editor-compound .editor-compound .editor-compound .editor-compound .editor-compound .editor-compound .editor-delimiter {
+    color: #844790;
+}
+.editor-compound .editor-compound .editor-compound .editor-compound .editor-compound .editor-compound .editor-compound .editor-delimiter {
+    color: #272a32;
+}
