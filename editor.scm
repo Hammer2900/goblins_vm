@@ -3,7 +3,6 @@
 (define-module (editor)
   #:use-module (goblins utils hashmap)
   #:use-module (ice-9 match)
-  #:use-module (ice-9 textual-ports)
   #:use-module ((srfi srfi-1) #:select (fold))
   #:use-module (srfi srfi-9)
   #:use-module (srfi srfi-9 gnu)
@@ -24,6 +23,7 @@
             compound-node-parent
             compound-node-type
             compound-node-children
+            compound-node-eol
 
             node-parent
             set-node-parent
@@ -49,162 +49,6 @@
             tree->sexp
             sexp->tree))
 
-;; Simple rope implementation for string editing.
-
-(define-record-type <rope>
-  (make-rope weight left right)
-  %rope?
-  (weight rope-weight)
-  (left rope-left)
-  (right rope-right))
-
-(define (print-rope rope port)
-  (format port "#<rope ~s>" (rope->string rope)))
-(set-record-type-printer! <rope> print-rope)
-
-(define (rope? x)
-  (or (%rope? x) (string? x)))
-
-(define (rope->sexp rope)
-  (let lp ((rope rope))
-    (match rope
-      (($ <rope> weight left right)
-       (list weight (lp left) (lp right)))
-      (_ rope))))
-
-(define (rope-for-each proc rope)
-  (match rope
-    (($ <rope> weight left right)
-     (rope-for-each proc left)
-     (rope-for-each proc right))
-    ("" (values))
-    (str (proc str))))
-
-(define (rope-fold proc init rope)
-  (let lp ((rope rope) (prev init))
-    (match rope
-      (($ <rope> weight left right)
-       (lp right (lp left prev)))
-      ("" prev)
-      (str (proc str prev)))))
-
-(define (rope-fold-right proc init rope)
-  (let lp ((rope rope) (prev init))
-    (match rope
-      (($ <rope> weight left right)
-       (lp left (lp right prev)))
-      ("" prev)
-      (str (proc str prev)))))
-
-(define (rope->list rope)
-  (rope-fold-right cons '() rope))
-
-(define (rope->string rope)
-  (string-concatenate (rope->list rope)))
-
-(define (rope-length rope)
-  (match rope
-    (($ <rope> weight left right)
-     (+ weight (rope-length right)))
-    (str (string-length str))))
-
-(define (rope-ref rope i)
-  (match rope
-    (($ <rope> weight left right)
-     (if (< i weight)
-         (rope-ref left i)
-         (rope-ref right (- i weight))))
-    (str (string-ref str i))))
-
-(define (rope-rebalance-maybe rope)
-  (define (balanced? rope)
-    (match rope
-      (($ <rope> weight left right)
-       (match (balanced? left)
-         (#f #f)
-         (hl
-          (match (balanced? right)
-            (#f #f)
-            (hr
-             (and (<= (abs (- hl hr)) 1)
-                  (1+ (max hl hr))))))))
-      ("" 0)
-      (_ 1)))
-  (define (rebalance rope)
-    (let ((strs (list->vector (rope->list rope))))
-      (let lp ((start 0) (end (vector-length strs)))
-        (let ((delta (- end start)))
-          (cond
-           ((= delta 1)
-            (vector-ref strs start))
-           ((= delta 2)
-            (let ((a (vector-ref strs start))
-                  (b (vector-ref strs (1+ start))))
-              (make-rope (rope-length a) a b)))
-           (else
-            (let* ((mid (+ start (quotient delta 2)))
-                   (a (lp start mid))
-                   (b (lp mid end)))
-              (make-rope (rope-length a) a b))))))))
-  (if (balanced? rope)
-      rope
-      (rebalance rope)))
-
-(define (rope-append a b . rest)
-  (define (concat a b)
-    (make-rope (rope-length a) a b))
-  (rope-rebalance-maybe
-   (let lp ((a (concat a b)) (rest rest))
-     (match rest
-       (() a)
-       ((b . rest)
-        (lp (concat a b) rest))))))
-
-(define (rope-split rope i)
-  (match rope
-    (($ <rope> weight left right)
-     (cond
-      ((< i weight)
-       (call-with-values (lambda () (rope-split left i))
-         (lambda (left right*)
-           (values left (rope-append right* right)))))
-      ((> i weight)
-       (call-with-values (lambda () (rope-split right (- i weight)))
-         (lambda (left* right)
-           (values (rope-append left left*) right))))
-      (else
-       (values left right))))
-    (str
-     (cond
-      ((zero? i)
-       (values "" str))
-      ((= i (string-length str))
-       (values str ""))
-      (else
-       (values (substring str 0 i)
-               (substring str i)))))))
-
-(define (rope-insert rope i str)
-  (cond
-   ((zero? i)
-    (rope-append str rope))
-   ((= i (rope-length rope))
-    (rope-append rope str))
-   (else
-    (call-with-values (lambda () (rope-split rope i))
-      (lambda (l r)
-        (rope-append l str r))))))
-
-(define* (rope-remove rope start #:optional (end (rope-length rope)))
-  (call-with-values (lambda () (rope-split rope start))
-    (lambda (left right*)
-      (call-with-values (lambda () (rope-split rope end))
-        (lambda (left* right)
-          (rope-append left right))))))
-
-(define* (rope-select rope start #:optional (end (rope-length rope)))
-  (rope-remove (rope-remove rope end) 0 start))
-
 ;; Holes are empty spots in the expression tree.
 
 (define-record-type <hole>
@@ -223,12 +67,18 @@
   (parent atom-node-parent)
   (value atom-node-ref))
 
+(define-record-type <node:eol>
+  (make-eol-node parent)
+  eol-node?
+  (parent eol-node-parent))
+
 (define-record-type <node:compound>
-  (make-compound-node parent type children)
+  (make-compound-node parent type children eol)
   compound-node?
   (parent compound-node-parent)
   (type compound-node-type)
-  (children compound-node-children))
+  (children compound-node-children)
+  (eol compound-node-eol))
 
 ;; (define-record-type <node:cons>
 ;;   (make-cons-node parent car cdr)
@@ -244,21 +94,23 @@
 
 (define (node-parent node)
   (match node
-    (($ <node:atom> parent)
-     parent)
-    (($ <node:compound> parent)
+    ((or ($ <node:atom> parent)
+         ($ <node:eol> parent)
+         ($ <node:compound> parent))
      parent)))
 
 (define (set-node-parent node parent)
   (match node
     (($ <node:atom> _ value)
      (make-atom-node parent value))
-    (($ <node:compound> _ type children)
-     (make-compound-node parent type children))))
+    (($ <node:eol> _)
+     (make-eol-node parent))
+    (($ <node:compound> _ type children eol)
+     (make-compound-node parent type children eol))))
 
 (define (replace-child parent child new)
   (match parent
-    (($ <node:compound> parent type children)
+    (($ <node:compound> parent type children eol)
      (make-compound-node
       parent type
       (let lp ((children children))
@@ -267,7 +119,8 @@
           ((child* . children)
            (if (eq? child child*)
                (cons new children)
-               (cons child* (lp children))))))))))
+               (cons child* (lp children))))))
+      eol))))
 
 ;; (define (set-node-child node old new)
 ;;   (match node
@@ -298,8 +151,25 @@
   (root tree-root)
   (nodes tree-nodes))
 
-;; (define* (make-empty-tree #:optional root)
-;;   (make-tree root (hashvmap)))
+(define* (add-atom-node nodes value #:key parent)
+  (let* ((id (fresh-id))
+         (atom (make-atom-node parent value)))
+    (values (hashmap-set nodes id atom) id)))
+
+(define* (add-list-node nodes #:key parent (children '()))
+  (let* ((eol-id (fresh-id))
+         (list-id (fresh-id))
+         (eol (make-eol-node list-id))
+         (list-node (make-compound-node parent 'list children eol-id))
+         (nodes (hashmap-set nodes list-id list-node))
+         (nodes (hashmap-set nodes eol-id eol)))
+    (values nodes list-id)))
+
+;; Not really empty, but with an empty list as the root.
+(define (make-empty-tree)
+  (call-with-values (lambda () (add-list-node (hashvmap)))
+    (lambda (nodes root)
+      (make-tree root nodes))))
 
 ;; (define (set-tree-root tree root)
 ;;   (match tree
@@ -314,16 +184,26 @@
     (($ <tree> root nodes)
      (make-tree root (hashmap-set nodes id node)))))
 
+(define (tree-parent tree id)
+  (node-parent (tree-ref tree id)))
+
 ;; Conversion routines
-(define (tree->sexp tree)
-  (match tree
-    (($ <tree> root nodes)
-     (let lp ((id root))
-       (match (hashmap-ref nodes id)
-         (($ <node:atom> _ value)
-          value)
-         (($ <node:compound> _ 'list children)
-          (map lp children)))))))
+(define* (tree->sexp tree #:optional (root (tree-root tree)))
+  (let ((nodes (tree-nodes tree)))
+    (let lp ((id root))
+      (match (hashmap-ref nodes id)
+        (($ <node:atom> _ value)
+         value)
+        (($ <node:compound> _ 'list children)
+         (map lp children))
+        (($ <node:compound> _ 'dotted-list children)
+         (let lp ((children children))
+           (match children
+             ((last) last)
+             ((child . children)
+              (cons (lp child) (lp children))))))
+        (($ <node:compound> _ 'vector children)
+         (list->vector (map lp children)))))))
 
 ;; TODO: tree->syntax
 
@@ -331,11 +211,12 @@
   (define (walk nodes exp id parent)
     (match exp
       ((children ...)
-       (let* ((ids (map (lambda (_) (fresh-id)) children))
-              (node (make-compound-node parent 'list ids)))
-         (fold (lambda (child child-id nodes)
-                 (walk nodes child child-id id))
-               (hashmap-set nodes id node) children ids)))
+       (let ((ids (map (lambda (_) (fresh-id)) children)))
+         (call-with-values (lambda () (add-list-node nodes #:children ids))
+           (lambda (tree id)
+             (fold (lambda (child child-id nodes)
+                     (walk nodes child child-id id))
+                   nodes children ids)))))
       (_ (hashmap-set nodes id (make-atom-node parent exp)))))
   (let ((root (fresh-id)))
     (make-tree root (walk (hashvmap) exp root #f))))
@@ -346,49 +227,61 @@
     (and id
          (match (tree-ref tree id)
            ((or ($ <node:atom> parent)
-                ($ <node:compound> parent _ ()))
+                ($ <node:eol> parent))
             (lp parent id))
-           (($ <node:compound> parent type children)
+           (($ <node:compound> parent type children eol)
             (if prev
-                (let find ((children children))
-                  (match children
-                    (()
-                     (error "no such child" prev))
-                    ((child)
-                     (if (eqv? child prev)
-                         (lp parent id)
-                         (error "no such child" prev)))
-                    ((and (_ next . _) (child . children))
-                     (if (eqv? child prev)
-                         next
-                         (find children)))))
-                (car children)))))))
+                (if (eqv? prev eol)
+                    (lp parent id)
+                    (let find ((children children))
+                      (match children
+                        (()
+                         eol)
+                        ((child)
+                         (if (eqv? child prev)
+                             eol
+                             (error "no such child" prev)))
+                        ((and (_ next . _) (child . children))
+                         (if (eqv? child prev)
+                             next
+                             (find children))))))
+                (match children
+                  (()
+                   eol)
+                  ((child . _)
+                   child))))))))
 
 (define (tree-prev tree id)
-  (let lp ((id id) (next #f))
+  (let lp ((id id) (prev #f))
     (and id
          (match (tree-ref tree id)
-           (($ <node:atom> parent)
+           ((or ($ <node:atom> parent)
+                ($ <node:eol> parent))
             (lp parent id))
-           (($ <node:compound> parent type children)
-            (if next
-                (let find ((children children) (prev #f))
-                  (match children
-                    (()
-                     (error "no such child" next))
-                    ((child . children)
-                     (if (eqv? child next)
-                         (if prev
-                             ;; Descend the subtree to find the rightmost node.
-                             (let descend ((id prev))
-                               (match (tree-ref tree id)
-                                 ((or ($ <node:atom>)
-                                      ($ <node:compound> _ _ ()))
-                                  id)
-                                 (($ <node:compound> _ _ (_ ... last))
-                                  (descend last))))
-                             id)
-                         (find children child)))))
+           (($ <node:compound> parent type children eol)
+            (if prev
+                (if (eqv? prev eol)
+                    (match children
+                      (() id)
+                      ((_ ... last)
+                       (match (tree-ref tree last)
+                         ((? compound-node? node)
+                          (compound-node-eol node))
+                         (_ last))))
+                    (let find ((children children) (sibling #f))
+                      (match children
+                        (()
+                         (error "no such child" prev))
+                        ((child . children)
+                         (if (eqv? child prev)
+                             (if sibling
+                                 (match (tree-ref tree sibling)
+                                   ((? atom-node?)
+                                    sibling)
+                                   ((? compound-node? node)
+                                    (compound-node-eol node)))
+                                 id)
+                             (find children child))))))
                 (lp parent id)))))))
 
 ;; Test
@@ -407,210 +300,235 @@
 ;;                          (list id))))))
 ;;   (equal? forward (reverse backward)))
 
-(define (tree-parent tree id)
-  (node-parent (tree-ref tree id)))
-
 (define (tree-next-sexp tree id)
-  (match (tree-parent tree id)
-    (#f #f)
-    (parent-id
-     (match (tree-ref tree parent-id)
-       (($ <node:compound> _ _ children)
-        (let lp ((children children))
-          (match children
-            ((_)
-             (tree-next-sexp tree parent-id))
-            ((and (_ next . _) (child . children))
-             (if (eqv? child id)
-                 next
-                 (lp children))))))))))
+  (match (tree-ref tree id)
+    ((? compound-node? node)
+     (compound-node-eol node))
+    (node
+     (match (node-parent node)
+       (#f #f)
+       (parent
+        (match (tree-ref tree parent)
+          (($ <node:compound> _ _ children eol)
+           (if (eqv? id eol)
+               (tree-next tree id)
+               (let lp ((children children))
+                 (match children
+                   ((_)
+                    eol)
+                   ((and (_ next . _) (child . children))
+                    (if (eqv? child id)
+                        next
+                        (lp children)))))))))))))
 
 (define (tree-prev-sexp tree id)
   (match (tree-parent tree id)
     (#f #f)
-    (parent-id
-     (match (tree-ref tree parent-id)
-       (($ <node:compound> _ _ children)
-        (let lp ((children children) (prev #f))
-          (match children
-            ((child . children)
-             (if (eqv? child id)
-                 (or prev parent-id)
-                 (lp children child))))))))))
+    (parent
+     (match (tree-ref tree parent)
+       (($ <node:compound> _ _ children eol)
+        (if (eqv? id eol)
+            (match children
+              (() parent)
+              ((_ ... last) last))
+            (let lp ((children children) (prev #f))
+              (match children
+                ((child . children)
+                 (if (eqv? child id)
+                     (or prev parent)
+                     (lp children child)))))))))))
 
 (define (tree-wrap tree id)
   (match tree
     (($ <tree> root nodes)
      (let* ((node (hashmap-ref nodes id))
-            (parent-id (node-parent node))
-            (wrapper-id (fresh-id))
-            (wrapper (make-compound-node parent-id 'list (list id)))
-            (nodes (hashmap-set nodes wrapper-id wrapper))
-            (nodes (hashmap-set nodes id (set-node-parent node wrapper-id))))
-       ;; Either replace the root node with the new wrapper node or
-       ;; splice the new wrapper node into the middle of the tree
-       ;; somewhere.
-       (values (if (eqv? id root)
-                   (make-tree wrapper-id nodes)
-                   (let* ((parent (hashmap-ref nodes parent-id))
-                          (parent (replace-child parent id wrapper-id)))
-                     (make-tree root (hashmap-set nodes parent-id parent))))
-               wrapper-id)))))
+            (parent (node-parent node)))
+       (call-with-values (lambda ()
+                           (add-list-node nodes
+                                          #:parent parent
+                                          #:children (list id)))
+         (lambda (nodes wrapper)
+           ;; Rewrite selected node to point at new parent wrapper.
+           (let* ((node (set-node-parent node wrapper))
+                  (nodes (hashmap-set nodes id node)))
+             ;; Either replace the root node with the new wrapper node
+             ;; or splice the new wrapper node into the middle of the
+             ;; tree somewhere.
+             (values (if (eqv? id root)
+                         (make-tree wrapper nodes)
+                         (let* ((parent-node (hashmap-ref nodes parent))
+                                (parent-node (replace-child parent-node id wrapper))
+                                (nodes (hashmap-set nodes parent parent-node)))
+                           (make-tree root nodes)))
+                     wrapper))))))))
 
 (define (tree-open tree id)
   (match tree
     (($ <tree> root nodes)
      (match (hashmap-ref nodes id)
-       (($ <node:compound> parent-id type children)
-        (let* ((new-id (fresh-id))
-               (new (make-compound-node id 'list '()))
-               (parent (make-compound-node parent-id type (cons new-id children)))
-               (nodes (hashmap-set nodes new-id new))
-               (nodes (hashmap-set nodes id parent)))
-          (values (make-tree root nodes) new-id)))
+       ;; When a list head is selected, open a new list within.
+       (($ <node:compound> parent type children eol)
+        (call-with-values (lambda () (add-list-node nodes #:parent id))
+          (lambda (nodes empty)
+            ;; Rewrite node to add the new empty child list.
+            (let* ((node (make-compound-node parent type
+                                             (cons empty children)
+                                             eol))
+                   (nodes (hashmap-set nodes id node)))
+              (values (make-tree root nodes) empty)))))
+       ;; When a leaf node is selected, open a new list as a sibling
+       ;; to the right.
        (node
-        (let ((parent-id (node-parent node)))
-          (match (hashmap-ref nodes parent-id)
-            (($ <node:compound> _ _ children)
-             (let* ((new-id (fresh-id))
-                    (new (make-compound-node parent-id 'list '()))
-                    (parent (make-compound-node
-                             id 'list
-                             (let lp ((children children))
-                               (match children
-                                 ((child . children)
-                                  (if (eqv? child id)
-                                      (cons* child new-id children)
-                                      (cons child (lp children))))))))
-                    (nodes (hashmap-set nodes new-id new))
-                    (nodes (hashmap-set nodes parent-id parent)))
-               (values (make-tree root nodes) new-id))))))))))
+        (let lp ((id id) (parent (node-parent node)))
+          (match (hashmap-ref nodes parent)
+            (($ <node:compound> grandparent type children eol)
+             ;; If the end-of-list node is selected then insert the
+             ;; element as a sibling of the parent, recursively.
+             (if (eqv? id eol)
+                 (lp parent grandparent)
+                 (call-with-values (lambda () (add-list-node nodes #:parent parent))
+                   (lambda (nodes empty)
+                     ;; Rewrite parent node to add the new empty child
+                     ;; list to the right of the selected node.
+                     (let* ((node (make-compound-node
+                                   grandparent type
+                                   (let lp ((children children))
+                                     (match children
+                                       ((child . children)
+                                        (if (eqv? child id)
+                                            (cons* child empty children)
+                                            (cons child (lp children))))))
+                                   eol))
+                            (nodes (hashmap-set nodes parent node)))
+                       (values (make-tree root nodes) empty)))))))))))))
 
-;; TODO: This is almost exactly the same as tree-open. Refactor.
-(define (tree-insert-atom tree id)
+;; TODO: Similar logic as tree-open. Refactor.
+(define (tree-insert-atom tree id value)
   (match tree
     (($ <tree> root nodes)
      (match (hashmap-ref nodes id)
-       (($ <node:compound> parent-id type children)
-        (let* ((new-id (fresh-id))
-               (new (make-atom-node id ""))
-               (parent (make-compound-node parent-id type (cons new-id children)))
-               (nodes (hashmap-set nodes new-id new))
-               (nodes (hashmap-set nodes id parent)))
-          (values (make-tree root nodes) new-id)))
+       (($ <node:compound> parent type children eol)
+        (call-with-values (lambda () (add-atom-node nodes value #:parent id))
+          (lambda (nodes atom)
+            (let* ((node (make-compound-node parent type (cons atom children) eol))
+                   (nodes (hashmap-set nodes id node)))
+              (values (make-tree root nodes) atom)))))
        (node
-        (let ((parent-id (node-parent node)))
-          (match (hashmap-ref nodes parent-id)
-            (($ <node:compound> _ _ children)
-             (let* ((new-id (fresh-id))
-                    (new (make-atom-node parent-id ""))
-                    (parent (make-compound-node
-                             id 'list
-                             (let lp ((children children))
-                               (match children
-                                 ((child . children)
-                                  (if (eqv? child id)
-                                      (cons* child new-id children)
-                                      (cons child (lp children))))))))
-                    (nodes (hashmap-set nodes new-id new))
-                    (nodes (hashmap-set nodes parent-id parent)))
-               (values (make-tree root nodes) new-id))))))))))
+        (let lp ((id id) (parent (node-parent node)))
+          (match (hashmap-ref nodes parent)
+            (($ <node:compound> grandparent type children eol)
+             (if (eqv? id eol)
+                 (lp parent grandparent)
+                 (call-with-values (lambda ()
+                                     (add-atom-node nodes value
+                                                    #:parent parent))
+                   (lambda (nodes atom)
+                     (let* ((node (make-compound-node
+                                   grandparent type
+                                   (let lp ((children children))
+                                     (match children
+                                       ((child . children)
+                                        (if (eqv? child id)
+                                            (cons* child atom children)
+                                            (cons child (lp children))))))
+                                   eol))
+                            (nodes (hashmap-set nodes parent node)))
+                       (values (make-tree root nodes) atom)))))))))))))
 
+;; TODO: Delete all nodes in subtree to avoid unbounded memory growth.
 (define (tree-delete tree id)
   (match tree
     (($ <tree> root nodes)
      (let* ((node (hashmap-ref nodes id))
-            (parent-id (node-parent node)))
-       (match (hashmap-ref nodes parent-id)
+            (parent (node-parent node)))
+       (match (hashmap-ref nodes parent)
          (#f (error "deleting root node unimplemented"))
-         (($ <node:compound> grandparent-id type children)
-          (let* ((children (let lp ((children children))
-                             (match children
-                               (() (error "no such child" id))
-                               ((child . children)
-                                (if (eqv? child id)
-                                    children
-                                    (cons child (lp children)))))))
-                 (parent (make-compound-node grandparent-id type children))
-                 (node (set-node-parent node #f))
-                 (nodes (hashmap-set nodes parent-id parent))
-                 (nodes (hashmap-set nodes id node)))
-            (make-tree root nodes))))))))
+         (($ <node:compound> grandparent type children eol)
+          (if (eqv? id eol)
+              tree
+              (let* ((children (let lp ((children children))
+                                 (match children
+                                   (() (error "no such child" id))
+                                   ((child . children)
+                                    (if (eqv? child id)
+                                        children
+                                        (cons child (lp children)))))))
+                     (parent-node (make-compound-node grandparent type children eol))
+                     (node (set-node-parent node #f))
+                     (nodes (hashmap-set nodes parent parent-node))
+                     (nodes (hashmap-set nodes id node)))
+                (make-tree root nodes)))))))))
 
 (define (tree-forward-delete tree id)
   (match tree
     (($ <tree> root nodes)
      (match (hashmap-ref nodes id)
-       ((and node (or ($ <node:atom> parent-id)
-                      ($ <node:compound> parent-id _ ())))
-        ;; TODO: Handle deletion of root node.
-        (match (hashmap-ref nodes parent-id)
-          (($ <node:compound> grandparent-id type children)
-           (call-with-values
-               (lambda ()
-                 (let lp ((children children) (prev #f))
-                   (match children
-                     ((child)
-                      (if (eqv? child id)
-                          (values '() (or prev parent-id))
-                          ;; This shouldn't happen.
-                          (error "no such child" id)))
-                     ((child . children)
-                      (if (eqv? child id)
-                          (match children
-                            ((next . _)
-                             (values children next)))
-                          (call-with-values (lambda () (lp children child))
-                            (lambda (children focus-id)
-                              (values (cons child children) focus-id))))))))
-             (lambda (children focus-id)
-               (let* ((parent (make-compound-node grandparent-id type children))
-                      ;; Unsure if we should do this as it would make
-                      ;; deletion not constant time.  Maybe we should
-                      ;; periodically GC trees to shake out all the
-                      ;; unreachable nodes.  By not deleting we also
-                      ;; get constant time cut/paste since all the
-                      ;; nodes are still in the graph.
-                      ;;
-                      ;; ;; Recursively remove entire subtree.
-                      ;; (nodes (let lp ((id id) (nodes nodes))
-                      ;;          (match (hashmap-ref nodes id)
-                      ;;            ((? atom-node?)
-                      ;;             (hashmap-remove nodes id))
-                      ;;            (($ <node:compound> _ _ children)
-                      ;;             (fold lp (hashmap-remove nodes id) children)))))
-                      (nodes (hashmap-set nodes id (set-node-parent node #f)))
-                      (nodes (hashmap-set nodes parent-id parent)))
-                 (values (make-tree root nodes) focus-id)))))))
-       (($ <node:compound> _ _ (first-child . _))
-        (values tree first-child))))))
+       ;; When deleting from the opening delimiter of a compound node,
+       ;; just move ahead to either the first item or the EOL node and
+       ;; leave the tree as-is.
+       (($ <node:compound> parent type children eol)
+        (match children
+          (() (values tree eol))
+          ((child . _) (values tree child))))
+       (node
+        (let ((parent (node-parent node)))
+          (if parent
+              (match (hashmap-ref nodes parent)
+                (($ <node:compound> grandparent type children eol)
+                 (if (eqv? id eol)
+                     (match children
+                       ;; List is empty, so delete it.
+                       (()
+                        (let ((focus (tree-next tree id)))
+                          (values (tree-delete tree parent) focus)))
+                       ;; List has at least one item, so do nothing.
+                       (_ (values tree id)))
+                     (let lp ((children children))
+                       (match children
+                         (() (error "no such child" id))
+                         ((child . children)
+                          (if (eqv? child id)
+                              (values (tree-delete tree child)
+                                      (match children
+                                        (() eol)
+                                        ((next . _) next)))
+                              (lp children))))))))
+              ;; TODO: Handle deletion of root node.
+              (error "deletion of root node unimplemented"))))))))
 
+;; TODO: Recursively remove deleted subtrees.
 (define (tree-backward-delete tree id)
   (match tree
     (($ <tree> root nodes)
-     (let ((parent-id (node-parent (hashmap-ref nodes id))))
-       (match (hashmap-ref nodes parent-id)
-         (($ <node:compound> grandparent-id type children)
-          (call-with-values
-              (lambda ()
-                (match children
-                  (((? (lambda (child) (eqv? child id)) child) . _)
-                   (values children #f))
-                  ((child . children)
-                   (let lp ((children children) (prev child))
-                     (match children
-                       (() (error "no such child" id))
-                       ((child . rest)
-                        (if (eqv? child id)
-                            (values children prev)
-                            (call-with-values (lambda () (lp rest child))
-                              (lambda (children target-id)
-                                (values (cons prev children) target-id))))))))))
-            (lambda (children* target-id)
-              (if (eq? children* children)
-                  (values tree #f)      ; no change
-                  (let* ((target (hashmap-ref nodes target-id))
-                         (parent (make-compound-node grandparent-id type children*))
-                         (nodes (hashmap-set nodes target-id (set-node-parent target #f)))
-                         (nodes (hashmap-set nodes parent-id parent)))
-                    (values (make-tree root nodes) target-id)))))))))))
+     (let ((parent (node-parent (hashmap-ref nodes id))))
+       (match (hashmap-ref nodes parent)
+         (($ <node:compound> grandparent type children eol)
+          (if (eqv? id eol)
+              (match children
+                ;; List is empty, so delete it.
+                (()
+                 (let ((focus (tree-next tree id)))
+                   (values (tree-delete tree parent) focus)))
+                ;; List has at least one item, so delete the last item
+                ;; if it is a leaf node or move to the closing
+                ;; delimiter if it is a compound node.
+                ((head ... tail)
+                 (match (hashmap-ref nodes tail)
+                   ((? compound-node? node)
+                    (values tree (compound-node-eol node)))
+                   (_
+                    (values (tree-delete tree tail) eol)))))
+              ;; If the selected node isn't EOL then we know there is
+              ;; at least one child.
+              (match children
+                ((head . tail)
+                 (if (eqv? head id)
+                     ;; Don't delete anything.
+                     (values tree id)
+                     (let lp ((tail tail) (prev head))
+                       (match tail
+                         (() (error "no such child" id))
+                         ((child . tail)
+                          (if (eqv? child id)
+                              (values (tree-delete tree prev) id)
+                              (lp tail child)))))))))))))))

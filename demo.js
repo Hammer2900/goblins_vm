@@ -26,7 +26,8 @@ async function load() {
         target: (e) => e.target,
         keyboardKey: (e) => e.key,
         keyboardAltKey: (e) => e.altKey,
-        keyboardCtrlKey: (e) => e.ctrlKey
+        keyboardCtrlKey: (e) => e.ctrlKey,
+        inputData: (e) => e.data,
       }
     }
   });

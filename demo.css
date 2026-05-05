@@ -4,38 +4,59 @@ body {
 
 /* Global editor style */
 .editor {
+    display: flex;
     font-family: monospace, "Inconsolata";
     font-size: 2em;
+    max-width: 50vw;
+    padding: 1rem;
+    border: 1px solid;
 }
 
 /* Highlight currently focused node */
 .editor-node:focus {
     outline: none;
 }
-.editor-atom:focus, .editor-compound:focus > .editor-delimiter:nth-child(1) {
+.editor-atom:focus, .editor-compound:focus > .editor-delimiter:first-child, .editor-delimiter-close:focus {
     background: #4ec8ff;
 }
 
 .editor-node {
-    padding: 0.1rem;
+    display: flex;
+    margin-bottom: auto;
+}
+
+.editor-compound {
+    flex-wrap: wrap;
+}
+
+.editor-indent-group {
+    display: flex;
+    flex-wrap: wrap;
+}
+
+.editor-compound .editor-node:not(:nth-child(-n+2)):not(:last-child) {
+    margin-left: 1rem;
+}
+/* .editor-indent-group > .editor-node, .editor-indent-group > .editor-group-end > .editor-node { */
+/*     margin-left: 1rem; */
+/* } */
+
+.editor-group-end {
+    display: flex;
+}
+
+.editor-delimiter-open {
+    margin-bottom: auto;
+}
+
+.editor-delimiter-close {
+    margin-top: auto;
 }
 
 /* Highlight keywords */
 .editor-keyword {
     font-weight: bold;
     color: #2152a5;
-}
-
-input.editor-atom {
-    font-family: monospace, "Inconsolata";
-    font-size: 100%;
-    background: none;
-    border: none;
-    background-image:none;
-    background-color:transparent;
-    -webkit-box-shadow: none;
-    -moz-box-shadow: none;
-    box-shadow: none;
 }
 
 /* Highlight nearest delimiters */

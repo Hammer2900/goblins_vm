@@ -21,9 +21,12 @@
             prevent-default!
             stop-propagation!
             event-target
+
             keyboard-event-key
             keyboard-event-alt-key?
             keyboard-event-ctrl-key?
+
+            input-event-data
 
             shtml->dom))
 
@@ -82,6 +85,7 @@
 (define-foreign event-target
   "event" "target"
   (ref extern) -> (ref extern))
+
 (define-foreign keyboard-event-key
   "event" "keyboardKey"
   (ref extern) -> (ref string))
@@ -95,6 +99,10 @@
   (ref extern) -> i32)
 (define (keyboard-event-ctrl-key? e)
   (eq? (%keyboard-event-ctrl-key? e) 1))
+
+(define-foreign input-event-data
+  "event" "inputData"
+  (ref extern) -> (ref null string))
 
 (define procedure->external/cached
   (let ((cache (make-weak-key-hashtable)))
