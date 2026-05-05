@@ -1,6 +1,12 @@
 async function load() {
   await Scheme.load_main("demo.wasm", {
     user_imports: {
+      window: {
+        getSelection: () => window.getSelection()
+      },
+      selection: {
+        setPosition: (sel, node, offset) => sel.setPosition(node, offset)
+      },
       document: {
         body() { return document.body; },
         getElementById: Document.prototype.getElementById.bind(document),

@@ -52,11 +52,9 @@
                        ('compound "editor-compound")
                        ('close-delimiter
                         "editor-delimiter editor-delimiter-close"))))
-            ;; (contenteditable ,(if (equal? type "atom") "true" "false"))
             (tabindex "0")
             (click ,(lambda (e)
                       (focus! (event-target e))))
-            ;; (input ,(lambda (e) (pk 'input e)))
             (keydown ,(lambda (e)
                         (stop-propagation! e)
                         (match (pk 'key (keyboard-event-key e))
@@ -75,11 +73,12 @@
                           ("ArrowDown"
                            (focus-maybe (tree-next-sexp *tree* id)))
                           ("Enter"
-                           (match type
+                           (match (pk 'type type)
                              ('atom
                               (edit id (event-target e))
                               (prevent-default! e))
-                             (_ (values))))
+                             (_
+                              (insert id (string->symbol "") (event-target e)))))
                           ("("
                            (if (keyboard-event-alt-key? e)
                                (wrap id (event-target e))
@@ -87,6 +86,9 @@
                           (")"
                            (jump-to-eol id))
                           (" "
+                           (prevent-default! e)
+                           (insert id (string->symbol "") (event-target e)))
+                          ("\""
                            (prevent-default! e)
                            (insert id "" (event-target e)))
                           ("Delete"
@@ -100,16 +102,15 @@
                                       (not (keyboard-event-ctrl-key? e))
                                       (not (keyboard-event-alt-key? e)))
                              (prevent-default! e)
-                             (insert id key (event-target e))))))))
+                             (insert id (string->symbol key) (event-target e))))))))
          ,@contents))
 
-;; TODO: Use browser range/selection API to move cursor to the end.
 (define (edit id orig)
   (match (tree-ref *tree* id)
     (($ <node:atom> parent value)
      (define (commit-maybe)
-       (match (element-inner-text new)
-         ((or "" "\n") #f)
+       (match (string-trim-both (element-inner-text new))
+         ("" #f)
          (str
           ;; TODO: Protect against non-atoms being read.
           (let* ((value (call-with-input-string str read))
@@ -133,55 +134,64 @@
        (if (commit-maybe)
            id
            (delete)))
+     (define (maybe-delimit shtml)
+       (match value
+         ((? string?)
+          `(span (@ (class "editor-node"))
+                 "\"" ,shtml "\""))
+         (_ shtml)))
      (define new
        (shtml->dom
-        `(span (@ (class "editor-node editor-atom")
-                  (contenteditable "plaintext-only")
-                  ;; (type "text")
-                  ;; (value ,(match value
-                  ;;           ((? number? x) (number->string x))
-                  ;;           ((? symbol? sym) (symbol->string sym))
-                  ;;           (str str)))
-
-                  ;; TODO: When backspacing from char 0, commit and
-                  ;; begin editing the previous node if there is
-                  ;; one.  When forward deleting from the last char,
-                  ;; do the same for the next node.
-                  (beforeinput ,(lambda (e)
-                                  (match (input-event-data e)
-                                    (#f
-                                     (values))
-                                    (" "
-                                     (prevent-default! e)
-                                     (when (commit-maybe)
-                                       (insert id "" (get-element-by-id (exp-id id)))))
-                                    ("("
-                                     (prevent-default! e)
-                                     (let ((focus (commit-or-delete)))
-                                       (open focus (get-element-by-id (exp-id focus)))))
-                                    (")"
-                                     (prevent-default! e)
-                                     (let ((focus (commit-or-delete)))
-                                       (jump-to-eol focus)))
-                                    ;; TODO: Jump to nearest closing paren
-                                    ;; (")" ...)
-                                    (_ (values)))))
-                  (focusout ,(lambda (e)
-                               (commit-or-delete)))
-                  (keydown ,(lambda (e)
-                              (stop-propagation! e)
-                              (match (keyboard-event-key e)
-                                ("Enter"
-                                 (commit-or-delete)
-                                 (prevent-default! e))
-                                ;; ("Escape"
-                                ;;  (replace-with! new orig)
-                                ;;  (focus! orig)
-                                ;;  (prevent-default! e))
-                                (_ (values))))))
-               ,value)))
+        (maybe-delimit
+         `(span (@ (id ,(exp-id id))
+                   (class "editor-node editor-atom")
+                   (contenteditable "plaintext-only")
+                   ;; TODO: When backspacing from char 0, commit and
+                   ;; begin editing the previous node if there is
+                   ;; one.  When forward deleting from the last char,
+                   ;; do the same for the next node.
+                   (beforeinput ,(lambda (e)
+                                   (match (pk 'before-input (input-event-data e))
+                                     (#f
+                                      (values))
+                                     (" "
+                                      (prevent-default! e)
+                                      (when (commit-maybe)
+                                        (insert id (string->symbol "")
+                                                (get-element-by-id (exp-id id)))))
+                                     ;; TODO: Allow insertion of
+                                     ;; double quote if preceding
+                                     ;; character is a \
+                                     ("\""
+                                      (prevent-default! e)
+                                      (if (string? value)
+                                          (commit-maybe)
+                                          (let ((focus (commit-or-delete)))
+                                            (pk 'focus focus)
+                                            (insert focus "" (get-element-by-id (exp-id focus))))))
+                                     ("("
+                                      (prevent-default! e)
+                                      (let ((focus (commit-or-delete)))
+                                        (open focus (get-element-by-id (exp-id focus)))))
+                                     (")"
+                                      (prevent-default! e)
+                                      (let ((focus (commit-or-delete)))
+                                        (jump-to-eol focus)))
+                                     (_ (values)))))
+                   (focusout ,(lambda (e)
+                                (commit-or-delete)))
+                   (keydown ,(lambda (e)
+                               (stop-propagation! e)
+                               (match (keyboard-event-key e)
+                                 ("Enter"
+                                  (commit-or-delete)
+                                  (prevent-default! e))
+                                 (_ (values))))))
+                ,value))))
      (replace-with! orig new)
-     (focus! new))))
+     (let ((editable (get-element-by-id (exp-id id))))
+       (focus! editable)
+       (set-selection-position! (selection) editable 1)))))
 
 (define (wrap id elem)
   (call-with-values (lambda () (tree-wrap *tree* id))
@@ -252,6 +262,9 @@
             ,(format #f "~s" value)))
     ((? number?)
      `(span (@ (class "editor-number"))
+            ,value))
+    ((or #t #f)
+     `(span (@ (class "editor-boolean"))
             ,value))))
 
 (define* (tree->shtml tree #:optional (root (tree-root tree)))
@@ -293,8 +306,4 @@
   `(article
     (h1 "Structural editor demo")
     (main (@ (class "editor"))
-          ;; ,(map (lambda (id)
-          ;;         (tree->shtml *tree* id))
-          ;;       (compound-node-children
-          ;;        (tree-ref *tree* (tree-root *tree*))))
           ,(tree->shtml *tree*)))))

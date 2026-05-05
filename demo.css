@@ -13,10 +13,10 @@ body {
     border: 1px solid;
 }
 
-/* .editor-node { */
-/*     display: flex; */
-/*     margin-bottom: auto; */
-/* } */
+.editor-node {
+    display: flex;
+    margin-bottom: auto;
+}
 
 .editor-compound {
     display: flex;

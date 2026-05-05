@@ -56,7 +56,7 @@
 
 ;; Nodes hold expressions and refer back to their parent node id.
 
-;; Numbers, symbols, keywords, and strings
+;; Booleans, numbers, symbols, keywords, and strings
 (define-record-type <node:atom>
   (make-atom-node parent value)
   atom-node?

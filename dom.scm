@@ -2,7 +2,10 @@
   #:use-module (hoot ffi)
   #:use-module (hoot hashtables)
   #:use-module (ice-9 match)
-  #:export (document-body
+  #:export (selection
+            set-selection-position!
+
+            document-body
             get-element-by-id
             make-text-node
             make-element
@@ -29,6 +32,14 @@
             input-event-data
 
             shtml->dom))
+
+(define-foreign selection
+  "window" "getSelection"
+  -> (ref extern))
+
+(define-foreign set-selection-position!
+  "selection" "setPosition"
+  (ref extern) (ref extern) i32 -> none)
 
 (define-foreign document-body
   "document" "body"
@@ -125,6 +136,10 @@
      (make-text-node (number->string x)))
     ((? symbol? sym)
      (make-text-node (symbol->string sym)))
+    ((? keyword? kw)
+     (make-text-node (keyword->symbol (symbol->string kw))))
+    (#t (make-text-node "#t"))
+    (#f (make-text-node "#f"))
     ;; An element tree.  The first item is the HTML tag.
     (((? symbol? tag) . body)
      ;; Create a new element with the given tag.
