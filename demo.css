@@ -1,5 +1,6 @@
 body {
     font-family: sans;
+    color: #272a32;
 }
 
 /* Global editor style */
@@ -12,20 +13,13 @@ body {
     border: 1px solid;
 }
 
-/* Highlight currently focused node */
-.editor-node:focus {
-    outline: none;
-}
-.editor-atom:focus, .editor-compound:focus > .editor-delimiter:first-child, .editor-delimiter-close:focus {
-    background: #4ec8ff;
-}
-
-.editor-node {
-    display: flex;
-    margin-bottom: auto;
-}
+/* .editor-node { */
+/*     display: flex; */
+/*     margin-bottom: auto; */
+/* } */
 
 .editor-compound {
+    display: flex;
     flex-wrap: wrap;
 }
 
@@ -35,11 +29,16 @@ body {
 }
 
 .editor-compound .editor-node:not(:nth-child(-n+2)):not(:last-child) {
-    margin-left: 1rem;
+    margin-left: 1ch;
 }
-/* .editor-indent-group > .editor-node, .editor-indent-group > .editor-group-end > .editor-node { */
-/*     margin-left: 1rem; */
-/* } */
+
+/* Highlight currently focused node */
+.editor-node:focus {
+    outline: none;
+}
+.editor-atom:focus, .editor-compound:focus > .editor-delimiter:first-child, .editor-delimiter-close:focus {
+    background: #4ec8ff;
+}
 
 .editor-group-end {
     display: flex;
@@ -53,14 +52,26 @@ body {
     margin-top: auto;
 }
 
-/* Highlight keywords */
-.editor-keyword {
+/* Highlighting for various kinds of leaf nodes */
+.editor-special-form {
     font-weight: bold;
     color: #2152a5;
 }
+.editor-keyword {
+    color: #844790;
+}
+.editor-number {
+    color: #dc6250;
+}
+.editor-string, .editor-record-type {
+    color: #eeb24a;
+}
+.editor-comment {
+    color: #21525a;
+}
 
 /* Highlight nearest delimiters */
-.editor-compound:has(> .editor-atom:focus) > .editor-delimiter,
+.editor-compound:has(> .editor-atom:focus, > .editor-delimiter:focus) > .editor-delimiter,
 .editor-compound:focus > .editor-delimiter {
     font-weight: bold;
 }

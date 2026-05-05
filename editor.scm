@@ -5,18 +5,22 @@
   #:use-module (ice-9 match)
   #:use-module ((srfi srfi-1) #:select (fold))
   #:use-module (srfi srfi-9)
-  #:use-module (srfi srfi-9 gnu)
   #:export (<node:atom>
             make-atom-node
             node-atom?
             atom-node-parent
             atom-node-ref
 
-            ;; <node:cons>
-            ;; node-cons?
-            ;; make-cons-node
-            ;; cons-node-car
-            ;; cons-node-cdr
+            <node:comment>
+            make-comment-node
+            comment-node?
+            comment-node-parent
+            comment-node-string
+            comment-node-inline?
+
+            <node:eol>
+            eol-node?
+            eold-node-parent
 
             <node:compound>
             compound-node?
@@ -43,29 +47,28 @@
             tree-wrap
             tree-open
             tree-insert-atom
+            tree-next-eol
             tree-delete
             tree-forward-delete
             tree-backward-delete
             tree->sexp
             sexp->tree))
 
-;; Holes are empty spots in the expression tree.
-
-(define-record-type <hole>
-  (make-hole)
-  hole?)
-
-(define (print-hole hole port)
-  (display "Ø" port))
-(set-record-type-printer! <hole> print-hole)
-
 ;; Nodes hold expressions and refer back to their parent node id.
 
+;; Numbers, symbols, keywords, and strings
 (define-record-type <node:atom>
   (make-atom-node parent value)
   atom-node?
   (parent atom-node-parent)
   (value atom-node-ref))
+
+(define-record-type <node:comment>
+  (make-comment-node parent string inline?)
+  comment-node?
+  (parent comment-node-parent)
+  (string comment-node-string)
+  (inline? comment-node-inline?))
 
 (define-record-type <node:eol>
   (make-eol-node parent)
@@ -79,18 +82,6 @@
   (type compound-node-type)
   (children compound-node-children)
   (eol compound-node-eol))
-
-;; (define-record-type <node:cons>
-;;   (make-cons-node parent car cdr)
-;;   cons-node?
-;;   (parent cons-node-parent)
-;;   (car cons-node-car)
-;;   (cdr cons-node-cdr))
-
-;; (define (null-atom-node? node)
-;;   (match node
-;;     (($ <node:atom> _ ()) #t)
-;;     (_ #f)))
 
 (define (node-parent node)
   (match node
@@ -121,17 +112,6 @@
                (cons new children)
                (cons child* (lp children))))))
       eol))))
-
-;; (define (set-node-child node old new)
-;;   (match node
-;;     (($ <node:cons> parent car cdr)
-;;      (cond
-;;       ((eq? old car)
-;;        (make-cons-node parent new cdr))
-;;       ((eq? old cdr)
-;;        (make-cons-node parent car new))
-;;       (else
-;;        (error "not a child" old))))))
 
 ;; Unique id generator
 
@@ -170,11 +150,6 @@
   (call-with-values (lambda () (add-list-node (hashvmap)))
     (lambda (nodes root)
       (make-tree root nodes))))
-
-;; (define (set-tree-root tree root)
-;;   (match tree
-;;     (($ <tree> _ nodes)
-;;      (make-tree root nodes))))
 
 (define (tree-ref tree id)
   (hashmap-ref (tree-nodes tree) id))
@@ -435,8 +410,31 @@
                             (nodes (hashmap-set nodes parent node)))
                        (values (make-tree root nodes) atom)))))))))))))
 
-;; TODO: Delete all nodes in subtree to avoid unbounded memory growth.
+(define (tree-next-eol tree id)
+  (match tree
+    (($ <tree> root nodes)
+     (match (hashmap-ref nodes id)
+       ((? compound-node? node)
+        (compound-node-eol node))
+       (node
+        (let lp ((id id) (node node))
+          (match (node-parent node)
+            (#f #f)
+            (parent
+             (let* ((parent-node (hashmap-ref nodes parent))
+                    (eol (compound-node-eol parent-node)))
+               (if (eqv? id eol)
+                   (lp parent parent-node)
+                   eol))))))))))
+
 (define (tree-delete tree id)
+  (define (delete-subtree node nodes)
+    (match node
+      (($ <node:compound> parent type children eol)
+       (fold (lambda (child nodes)
+               (delete-subtree child (hashmap-remove nodes child)))
+             (hashmap-remove nodes eol) children))
+      (_ nodes)))
   (match tree
     (($ <tree> root nodes)
      (let* ((node (hashmap-ref nodes id))
@@ -454,10 +452,10 @@
                                         children
                                         (cons child (lp children)))))))
                      (parent-node (make-compound-node grandparent type children eol))
-                     (node (set-node-parent node #f))
-                     (nodes (hashmap-set nodes parent parent-node))
-                     (nodes (hashmap-set nodes id node)))
-                (make-tree root nodes)))))))))
+                     (nodes (hashmap-set nodes parent parent-node)))
+                ;; Recursively delete the entire subtree so we aren't
+                ;; leaving garbage behind.
+                (make-tree root (delete-subtree node nodes))))))))))
 
 (define (tree-forward-delete tree id)
   (match tree

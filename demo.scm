@@ -4,6 +4,28 @@
              (hoot ffi)
              (ice-9 match))
 
+;; TODO: Add indenting rules.
+(define %special-forms
+  '(and
+    call-with-prompt
+    call-with-values
+    define
+    define*
+    define-module
+    define-record-type
+    if
+    lambda
+    let
+    let*
+    letrec
+    letrec*
+    match
+    or
+    set!
+    unless
+    when))
+(define (special-form? x) (memq x %special-forms))
+
 (define *tree*
   ;;(sexp->tree '((* 4 5 6) + 1 (* 2 3 (- 4 5)) 6))
   (make-empty-tree))
@@ -54,11 +76,9 @@
                            (focus-maybe (tree-next-sexp *tree* id)))
                           ("Enter"
                            (match type
-                             ("atom"
+                             ('atom
                               (edit id (event-target e))
                               (prevent-default! e))
-                             ;; ("cons"
-                             ;;  (insert id (event-target e)))
                              (_ (values))))
                           ("("
                            (if (keyboard-event-alt-key? e)
@@ -90,9 +110,12 @@
      (define (commit-maybe)
        (match (element-inner-text new)
          ((or "" "\n") #f)
-         (value
-          (let ((new-elem (shtml->dom (node-element id 'atom (list value))))
-                (tree (tree-set *tree* id (make-atom-node parent value))))
+         (str
+          ;; TODO: Protect against non-atoms being read.
+          (let* ((value (call-with-input-string str read))
+                 (new-elem (shtml->dom
+                            (node-element id 'atom (list (atom->shtml value)))))
+                 (tree (tree-set *tree* id (make-atom-node parent value))))
             (set! *tree* tree)
             (replace-with! new new-elem)
             (focus! new-elem))
@@ -187,13 +210,10 @@
         (focus! (get-element-by-id (exp-id new)))))))
 
 (define (jump-to-eol id)
-  (match (tree-parent *tree* id)
+  (match (tree-next-eol *tree* id)
     (#f (values))
-    (parent
-     (let ((parent-node (tree-ref *tree* parent)))
-       (focus!
-        (get-element-by-id
-         (exp-id (compound-node-eol parent-node))))))))
+    (focus
+     (focus! (get-element-by-id (exp-id focus))))))
 
 (define (forward-delete id elem)
   (call-with-values (lambda () (tree-forward-delete *tree* id))
@@ -215,16 +235,30 @@
           (replace-with! (get-element-by-id (exp-id parent)) new-elem)))
       (focus! (get-element-by-id (exp-id focus))))))
 
+(define (atom->shtml value)
+  (match value
+    ((? symbol?)
+     ;; TODO: Only highlight special forms that are at the head
+     ;; of a list.
+     `(span (@ (class ,(if (special-form? value)
+                           "editor-special-form"
+                           "editor-symbol")))
+            ,(format #f "~s" value)))
+    ((? keyword?)
+     `(span (@ (class "editor-keyword"))
+            ,(format #f "~s" value)))
+    ((? string?)
+     `(span (@ (class "editor-string"))
+            ,(format #f "~s" value)))
+    ((? number?)
+     `(span (@ (class "editor-number"))
+            ,value))))
+
 (define* (tree->shtml tree #:optional (root (tree-root tree)))
   (let lp ((id root))
     (match (tree-ref tree id)
       (($ <node:atom> _ value)
-       (node-element id 'atom (list value)))
-      ;; (($ <node:compound> _ 'list () eol)
-      ;;  (node-element id "compound"
-      ;;                (list (open-delimiter "(")
-      ;;                      (node-element eol "compound"
-      ;;                                    (list (close-delimiter ")"))))))
+       (node-element id 'atom (list (atom->shtml value))))
       ;; TODO: To properly highlight parens, keep track of indentation
       ;; level while rendering and add a CSS class for each unique
       ;; color.
