@@ -39,6 +39,7 @@
             tree-nodes
             tree-ref
             tree-set
+            tree-set-atom
             tree-next
             tree-prev
             tree-parent
@@ -158,6 +159,14 @@
   (match tree
     (($ <tree> root nodes)
      (make-tree root (hashmap-set nodes id node)))))
+
+(define (tree-set-atom tree id value)
+  (match tree
+    (($ <tree> root nodes)
+     (match (hashmap-ref nodes id)
+       (($ <node:atom> parent)
+        (let ((node (make-atom-node parent value)))
+          (make-tree root (hashmap-set nodes id node))))))))
 
 (define (tree-parent tree id)
   (node-parent (tree-ref tree id)))

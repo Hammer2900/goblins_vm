@@ -1,6 +1,10 @@
 async function load() {
   await Scheme.load_main("demo.wasm", {
     user_imports: {
+      array: {
+        length: (a) => a.length,
+        get: (a, i) => a[i]
+      },
       window: {
         getSelection: () => window.getSelection()
       },
@@ -14,6 +18,9 @@ async function load() {
         createTextNode: Document.prototype.createTextNode.bind(document)
       },
       element: {
+        parent: (elem) => elem.parentElement,
+        firstChild: (elem) => elem.firstChild,
+        nextSibling: (elem) => elem.nextSibling,
         value(elem) { return elem.value; },
         setValue(elem, value) { elem.value = value; },
         innerText: (elem) => elem.innerText,
@@ -33,7 +40,15 @@ async function load() {
         keyboardKey: (e) => e.key,
         keyboardAltKey: (e) => e.altKey,
         keyboardCtrlKey: (e) => e.ctrlKey,
+        inputType: (e) => e.inputType,
         inputData: (e) => e.data,
+        inputTargetRanges: (e) => e.getTargetRanges()
+      },
+      range: {
+        startContainer: (r) => r.startContainer,
+        startOffset: (r) => r.startOffset,
+        endContainer: (r) => r.endContainer,
+        endOffset: (r) => r.endOffset
       }
     }
   });

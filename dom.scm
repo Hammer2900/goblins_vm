@@ -9,6 +9,10 @@
             get-element-by-id
             make-text-node
             make-element
+
+            element-parent
+            element-first-child
+            element-next-sibling
             append-child!
             remove!
             replace-with!
@@ -29,9 +33,29 @@
             keyboard-event-alt-key?
             keyboard-event-ctrl-key?
 
+            input-event-type
             input-event-data
+            input-event-target-ranges
+
+            range-start-container
+            range-start-offset
+            range-end-container
+            range-end-offset
 
             shtml->dom))
+
+(define-foreign array-length
+  "array" "length"
+  (ref extern) -> i32)
+(define-foreign array-ref-extern
+  "array" "get"
+  (ref extern) i32 -> (ref null extern))
+(define (array->list/extern array)
+  (let ((len (array-length array)))
+    (let lp ((i 0))
+      (if (< i len)
+          (cons (array-ref-extern array i) (lp (1+ i)))
+          '()))))
 
 (define-foreign selection
   "window" "getSelection"
@@ -53,6 +77,16 @@
 (define-foreign make-element
   "document" "createElement"
   (ref string) -> (ref extern))
+
+(define-foreign element-parent
+  "element" "parent"
+  (ref extern) -> (ref null extern))
+(define-foreign element-first-child
+  "element" "firstChild"
+  (ref extern) -> (ref null extern))
+(define-foreign element-next-sibling
+  "element" "nextSibling"
+  (ref extern) -> (ref null extern))
 (define-foreign append-child!
   "element" "appendChild"
   (ref extern) (ref extern) -> (ref extern))
@@ -111,9 +145,30 @@
 (define (keyboard-event-ctrl-key? e)
   (eq? (%keyboard-event-ctrl-key? e) 1))
 
+(define-foreign input-event-type
+  "event" "inputType"
+  (ref extern) -> (ref string))
 (define-foreign input-event-data
   "event" "inputData"
   (ref extern) -> (ref null string))
+(define-foreign %input-event-target-ranges
+  "event" "inputTargetRanges"
+  (ref extern) -> (ref extern))
+(define (input-event-target-ranges e)
+  (array->list/extern (%input-event-target-ranges e)))
+
+(define-foreign range-start-container
+  "range" "startContainer"
+  (ref extern) -> (ref extern))
+(define-foreign range-start-offset
+  "range" "startOffset"
+  (ref extern) -> i32)
+(define-foreign range-end-container
+  "range" "endContainer"
+  (ref extern) -> (ref extern))
+(define-foreign range-end-offset
+  "range" "endOffset"
+  (ref extern) -> i32)
 
 (define procedure->external/cached
   (let ((cache (make-weak-key-hashtable)))
@@ -137,7 +192,7 @@
     ((? symbol? sym)
      (make-text-node (symbol->string sym)))
     ((? keyword? kw)
-     (make-text-node (keyword->symbol (symbol->string kw))))
+     (make-text-node (string-append "#:" (symbol->string (keyword->symbol kw)))))
     (#t (make-text-node "#t"))
     (#f (make-text-node "#f"))
     ;; An element tree.  The first item is the HTML tag.

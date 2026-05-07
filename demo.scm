@@ -37,64 +37,61 @@
   (when id
     (focus! (get-element-by-id (exp-id id)))))
 
+(define (edit-begin! elem)
+  (set-attribute! elem "contenteditable" "plaintext-only"))
+
+(define (edit-end! elem)
+  (set-attribute! elem "contenteditable" "false"))
+
 (define (open-delimiter str)
   `(span (@ (class "editor-delimiter editor-delimiter-open")) ,str))
 
 (define (close-delimiter id str)
-  (node-element id 'close-delimiter (list str)))
+  (noneditable-node-shtml id "editor-delimiter editor-delimiter-close" (list str)))
 
-(define (node-element id type contents)
+(define (noneditable-node-shtml id class contents)
   `(span (@ (id ,(exp-id id))
-            (class ,(string-append
-                     "editor-node "
-                     (match type
-                       ('atom "editor-atom")
-                       ('compound "editor-compound")
-                       ('close-delimiter
-                        "editor-delimiter editor-delimiter-close"))))
+            (class ,(string-append "editor-node " class))
             (tabindex "0")
-            (click ,(lambda (e)
-                      (focus! (event-target e))))
+            (click ,(lambda (e) (focus! (event-target e))))
             (keydown ,(lambda (e)
                         (stop-propagation! e)
                         (match (pk 'key (keyboard-event-key e))
                           ("ArrowLeft"
-                           (focus-maybe
-                            (if (keyboard-event-ctrl-key? e)
-                                (tree-prev-sexp *tree* id)
-                                (tree-prev *tree* id))))
+                           (if (keyboard-event-ctrl-key? e)
+                               (jump-to-prev-sexp id)
+                               (jump-to-prev id)))
                           ("ArrowRight"
-                           (focus-maybe
-                            (if (keyboard-event-ctrl-key? e)
-                                (tree-next-sexp *tree* id)
-                                (tree-next *tree* id))))
+                           (if (keyboard-event-ctrl-key? e)
+                               (jump-to-next-sexp id)
+                               (jump-to-next id)))
                           ("ArrowUp"
-                           (focus-maybe (tree-prev-sexp *tree* id)))
+                           (jump-to-prev-sexp id))
                           ("ArrowDown"
-                           (focus-maybe (tree-next-sexp *tree* id)))
-                          ("Enter"
-                           (match (pk 'type type)
-                             ('atom
-                              (edit id (event-target e))
-                              (prevent-default! e))
-                             (_
-                              (insert id (string->symbol "") (event-target e)))))
+                           (jump-to-next-sexp id))
+                          ;; ("Enter"
+                          ;;  (insert id (string->symbol "")))
                           ("("
-                           (if (keyboard-event-alt-key? e)
-                               (wrap id (event-target e))
-                               (open id (event-target e))))
+                           (let ((elem (event-target e)))
+                             (if (keyboard-event-alt-key? e)
+                                 (wrap id elem)
+                                 (open id elem))))
                           (")"
                            (jump-to-eol id))
                           (" "
                            (prevent-default! e)
-                           (insert id (string->symbol "") (event-target e)))
+                           (insert id '#{}#))
                           ("\""
                            (prevent-default! e)
-                           (insert id "" (event-target e)))
+                           (insert id ""))
                           ("Delete"
-                           (forward-delete id (event-target e)))
+                           (if (keyboard-event-ctrl-key? e)
+                               (forward-delete id (event-target e))
+                               (jump-to-next id)))
                           ("Backspace"
-                           (backward-delete id (event-target e)))
+                           (if (keyboard-event-ctrl-key? e)
+                               (backward-delete id (event-target e))
+                               (jump-to-prev id)))
                           ((or "Ctrl" "Alt" "Shift")
                            (values))
                           (key
@@ -102,96 +99,340 @@
                                       (not (keyboard-event-ctrl-key? e))
                                       (not (keyboard-event-alt-key? e)))
                              (prevent-default! e)
-                             (insert id (string->symbol key) (event-target e))))))))
+                             (insert id (string->symbol key))))))))
          ,@contents))
 
-(define (edit id orig)
-  (match (tree-ref *tree* id)
-    (($ <node:atom> parent value)
-     (define (commit-maybe)
-       (match (string-trim-both (element-inner-text new))
-         ("" #f)
-         (str
-          ;; TODO: Protect against non-atoms being read.
-          (let* ((value (call-with-input-string str read))
-                 (new-elem (shtml->dom
-                            (node-element id 'atom (list (atom->shtml value)))))
-                 (tree (tree-set *tree* id (make-atom-node parent value))))
+(define (element-inner-text/trimmed elem)
+  (string-trim-both (element-inner-text elem)))
+
+(define (string-node-shtml id value)
+  (let ((elem-id (exp-id id)))
+    `(span (@ (id ,elem-id)
+              (class "editor-node editor-string")
+              (tabindex "0")
+              (keydown
+               ,(lambda (e)
+                  ;; Move into contenteditable child node.
+                  (define (jump-to-inner)
+                    (focus! (element-next-sibling
+                             (element-first-child
+                              (event-target e)))))
+                  (stop-propagation! e)
+                  (match (pk 'key (keyboard-event-key e))
+                    ("ArrowLeft"
+                     (if (keyboard-event-ctrl-key? e)
+                         (jump-to-prev-sexp id)
+                         (jump-to-prev id)))
+                    ("ArrowRight"
+                     (if (keyboard-event-ctrl-key? e)
+                         (jump-to-next-sexp id)
+                         (jump-to-inner)))
+                    ("ArrowUp"
+                     (jump-to-prev-sexp id))
+                    ("ArrowDown"
+                     (jump-to-next-sexp id))
+                    ("("
+                     (let ((elem (event-target e)))
+                       (if (keyboard-event-alt-key? e)
+                           (wrap id elem)
+                           (open id elem))))
+                    (")"
+                     (jump-to-eol id))
+                    ("\""
+                     (prevent-default! e)
+                     ;; Jump to closing delimiter.
+                     (focus!
+                      (element-next-sibling
+                       (element-next-sibling
+                        (element-first-child
+                         (event-target e))))))
+                    ("Delete"
+                     (if (keyboard-event-ctrl-key? e)
+                         (forward-delete id (event-target e))
+                         (jump-to-inner)))
+                    ("Backspace"
+                     (when (keyboard-event-ctrl-key? e)
+                       (backward-delete id (event-target e))
+                       (jump-to-prev id)))
+                    (key
+                     (when (and (= (string-length key) 1)
+                                (not (keyboard-event-ctrl-key? e))
+                                (not (keyboard-event-alt-key? e)))
+                       (jump-to-inner)))))))
+           (span (@ (class "editor-string-delimiter")) "\"")
+           (span (@ (class "editor-string-inner")
+                    (tabindex "0")
+                    (contenteditable "false")
+                    (focusin ,(lambda (e)
+                                (pk 'begin-edit-string)
+                                (edit-begin! (event-target e))))
+                    (focusout ,(lambda (e)
+                                 (edit-end! (event-target e))))
+                    (beforeinput
+                     ,(lambda (e)
+                        (let ((elem (event-target e)))
+                          (match (pk 'beforeinput (input-event-type e))
+                            ("insertText"
+                             (match (input-event-data e)
+                               ("\""
+                                ;; Unless there is a \ before the
+                                ;; caret, a " jumps to the closing
+                                ;; delimiter.
+                                (match (input-event-target-ranges e)
+                                  ((range)
+                                   (let ((start (range-start-offset range)))
+                                     (match (string-ref (element-inner-text
+                                                         (event-target e))
+                                                        (1- start))
+                                       (#\\ (values))
+                                       (_
+                                        (prevent-default! e)
+                                        (focus!
+                                         (element-next-sibling
+                                          (event-target e)))))))))
+                               (_ (values))))
+                            ((or "insertLineBreak"
+                                 "insertParagraph"
+                                 "insertOrderedList"
+                                 "insertUnorderedList"
+                                 "insertHorizontalRule")
+                             (prevent-default! e))
+                            ((or "deleteContentForward"
+                                 "deleteWordForward"
+                                 "deleteSoftLineForward"
+                                 "deleteHardLineForward")
+                             (when (string-null? (element-inner-text elem))
+                               (forward-delete id elem)))
+                            ((or "deleteContentBackward"
+                                 "deleteWordBackward"
+                                 "deleteSoftLineBackward"
+                                 "defleteHardLineBackward")
+                             (when (string-null? (element-inner-text elem))
+                               (backward-delete (tree-next *tree* id) elem)))
+                            (_ (values))))))
+                    ;; Synchronize element text with the relevant atom
+                    ;; node.
+                    (input ,(lambda (e)
+                              (let ((new (element-inner-text (event-target e))))
+                                (unless (equal? value new)
+                                  (set! value new)
+                                  (set! *tree* (tree-set-atom *tree* id new))))))
+                    (keydown
+                     ,(lambda (e)
+                        (stop-propagation! e)
+                        (match (pk 'key (keyboard-event-key e))
+                          ("ArrowLeft"
+                           (if (keyboard-event-ctrl-key? e)
+                               (jump-to-prev-sexp id)
+                               ;; TODO: Jump to previous node if
+                               ;; caret is at first char.
+                               #f))
+                          ("ArrowRight"
+                           (if (keyboard-event-ctrl-key? e)
+                               (jump-to-next-sexp id)
+                               ;; TODO: Jump to next node if caret
+                               ;; is at last char.
+                               #f))
+                          ("ArrowUp"
+                           (jump-to-prev-sexp id))
+                          ("ArrowDown"
+                           (jump-to-next-sexp id))
+                          ;; ("Enter"
+                          ;;  (prevent-default! e)
+                          ;;  (focus!
+                          ;;   (get-element-by-id
+                          ;;    (exp-id (commit-or-delete id (event-target e))))))
+                          ;; ("Delete"
+                          ;;  (when (keyboard-event-ctrl-key? e)
+                          ;;    (forward-delete id (event-target e))))
+                          ;; ("Backspace"
+                          ;;  (when (keyboard-event-alt-key? e)
+                          ;;    (backward-delete id (event-target e))))
+                          (_ (values))))))
+                 ,value)
+           (span (@ (class "editor-string-delimiter")
+                    (tabindex "0")
+                    (keydown
+                     ,(lambda (e)
+                        (stop-propagation! e)
+                        (match (pk 'key (keyboard-event-key e))
+                          ("ArrowLeft"
+                           (if (keyboard-event-ctrl-key? e)
+                               (jump-to-prev-sexp id)
+                               ;; Jump to opening delimiter.
+                               (focus! (element-parent (event-target e)))))
+                          ("ArrowRight"
+                           (if (keyboard-event-ctrl-key? e)
+                               (jump-to-next-sexp id)
+                               (jump-to-next id)))
+                          ("ArrowUp"
+                           (jump-to-prev-sexp id))
+                          ("ArrowDown"
+                           (jump-to-next-sexp id))
+                          ("("
+                           (let ((elem (event-target e)))
+                             (if (keyboard-event-alt-key? e)
+                                 (wrap id elem)
+                                 (open id elem))))
+                          (")"
+                           (jump-to-eol id))
+                          (" "
+                           (prevent-default! e)
+                           (insert id '#{}#))
+                          ("\""
+                           (prevent-default! e)
+                           (insert id ""))
+                          ("Delete"
+                           (cond
+                            ((keyboard-event-ctrl-key? e)
+                             (forward-delete id (event-target e)))
+                            (else
+                             (prevent-default! e)
+                             (jump-to-next id))))
+                          ("Backspace"
+                           (cond
+                            ((keyboard-event-ctrl-key? e)
+                             (backward-delete id (event-target e)))
+                            (else
+                             (prevent-default! e)
+                             (jump-to-prev id))))
+                          (key
+                           (when (and (= (string-length key) 1)
+                                      (not (keyboard-event-ctrl-key? e))
+                                      (not (keyboard-event-alt-key? e)))
+                             (prevent-default! e)
+                             (insert id (string->symbol key))))))))
+                 "\""))))
+
+;; non-string atoms only
+(define (atom-node-shtml id value)
+  (let ((elem-id (exp-id id)))
+    (define (empty? e)
+      (string-null?
+       (element-inner-text/trimmed
+        (event-target e))))
+    (define (delete-maybe e)
+      (if (empty? e)
+          (let* ((prev (tree-prev *tree* id))
+                 (tree (tree-delete *tree* id)))
             (set! *tree* tree)
-            (replace-with! new new-elem)
-            (focus! new-elem))
-          #t)))
-     (define (delete)
-       (let* ((parent (tree-parent *tree* id))
-              (focus (tree-prev *tree* id))
-              (tree (tree-delete *tree* id))
-              (new-elem (shtml->dom (tree->shtml tree parent))))
-         (set! *tree* tree)
-         (replace-with! (get-element-by-id (exp-id parent)) new-elem)
-         (focus! (get-element-by-id (exp-id focus)))
-         focus))
-     (define (commit-or-delete)
-       (if (commit-maybe)
-           id
-           (delete)))
-     (define (maybe-delimit shtml)
+            (remove! (event-target e))
+            prev)
+          id))
+    (define (node-classes)
+      (string-append
+       "editor-node editor-atom "
        (match value
-         ((? string?)
-          `(span (@ (class "editor-node"))
-                 "\"" ,shtml "\""))
-         (_ shtml)))
-     (define new
-       (shtml->dom
-        (maybe-delimit
-         `(span (@ (id ,(exp-id id))
-                   (class "editor-node editor-atom")
-                   (contenteditable "plaintext-only")
-                   ;; TODO: When backspacing from char 0, commit and
-                   ;; begin editing the previous node if there is
-                   ;; one.  When forward deleting from the last char,
-                   ;; do the same for the next node.
-                   (beforeinput ,(lambda (e)
-                                   (match (pk 'before-input (input-event-data e))
-                                     (#f
-                                      (values))
-                                     (" "
-                                      (prevent-default! e)
-                                      (when (commit-maybe)
-                                        (insert id (string->symbol "")
-                                                (get-element-by-id (exp-id id)))))
-                                     ;; TODO: Allow insertion of
-                                     ;; double quote if preceding
-                                     ;; character is a \
-                                     ("\""
-                                      (prevent-default! e)
-                                      (if (string? value)
-                                          (commit-maybe)
-                                          (let ((focus (commit-or-delete)))
-                                            (pk 'focus focus)
-                                            (insert focus "" (get-element-by-id (exp-id focus))))))
-                                     ("("
-                                      (prevent-default! e)
-                                      (let ((focus (commit-or-delete)))
-                                        (open focus (get-element-by-id (exp-id focus)))))
-                                     (")"
-                                      (prevent-default! e)
-                                      (let ((focus (commit-or-delete)))
-                                        (jump-to-eol focus)))
-                                     (_ (values)))))
-                   (focusout ,(lambda (e)
-                                (commit-or-delete)))
-                   (keydown ,(lambda (e)
-                               (stop-propagation! e)
-                               (match (keyboard-event-key e)
-                                 ("Enter"
-                                  (commit-or-delete)
-                                  (prevent-default! e))
-                                 (_ (values))))))
-                ,value))))
-     (replace-with! orig new)
-     (let ((editable (get-element-by-id (exp-id id))))
-       (focus! editable)
-       (set-selection-position! (selection) editable 1)))))
+         ((? symbol?)
+          ;; TODO: Only highlight special forms
+          ;; that are at the head of a list.
+          (if (special-form? value)
+              "editor-special-form"
+              "editor-symbol"))
+         ((? keyword?) "editor-keyword")
+         ((? number?) "editor-number")
+         ((or #t #f) "editor-boolean"))))
+    `(span (@ (id ,elem-id)
+              (class ,(node-classes))
+              (contenteditable "false")
+              (tabindex "0")
+              (focusin ,(lambda (e)
+                          (edit-begin! (event-target e))))
+              (focusout ,(lambda (e)
+                           (edit-end! (event-target e))
+                           (delete-maybe e)))
+              (beforeinput
+               ,(lambda (e)
+                  (let ((elem (event-target e))
+                        (ranges (input-event-target-ranges e)))
+                    (match (pk 'beforeinput (input-event-type e))
+                      ("insertText"
+                       (match (input-event-data e)
+                         ("\""
+                          (prevent-default! e)
+                          (let ((focus (delete-maybe e)))
+                            (insert focus "")))
+                         (_ (values))))
+                      ((or "insertLineBreak"
+                           "insertParagraph"
+                           "insertOrderedList"
+                           "insertUnorderedList"
+                           "insertHorizontalRule")
+                       (prevent-default! e))
+                      ((or "deleteContentForward"
+                           "deleteWordForward"
+                           "deleteSoftLineForward"
+                           "deleteHardLineForward")
+                       (when (string-null? (element-inner-text/trimmed elem))
+                         (forward-delete id elem)))
+                      ((or "deleteContentBackward"
+                           "deleteWordBackward"
+                           "deleteSoftLineBackward"
+                           "defleteHardLineBackward")
+                       (when (string-null? (element-inner-text/trimmed elem))
+                         (backward-delete (tree-next *tree* id) elem)))
+                      (_ (values))))))
+              ;; Synchronize element text with the relevant atom node.
+              (input
+               ,(lambda (e)
+                  ;; TODO: Add some indicator when the text fails to
+                  ;; parse.
+                  (let ((new (with-exception-handler (lambda (exn) value)
+                               (lambda ()
+                                 (let ((str (element-inner-text/trimmed
+                                             (event-target e))))
+                                   (match (call-with-input-string str read)
+                                     ((? eof-object?) value)
+                                     (x x))))
+                               #:unwind? #t)))
+                    (unless (equal? value new)
+                      (set! value new)
+                      (set! *tree* (tree-set-atom *tree* id new))
+                      (set-attribute! (event-target e) "class"
+                                      (node-classes))))))
+              (keydown
+               ,(lambda (e)
+                  (stop-propagation! e)
+                  (match (pk 'key (keyboard-event-key e))
+                    ("ArrowLeft"
+                     (if (keyboard-event-ctrl-key? e)
+                         (jump-to-prev-sexp id)
+                         ;; TODO: Jump to previous node if
+                         ;; caret is at first char.
+                         #f))
+                    ("ArrowRight"
+                     (if (keyboard-event-ctrl-key? e)
+                         (jump-to-next-sexp id)
+                         ;; TODO: Jump to next node if caret
+                         ;; is at last char.
+                         #f))
+                    ("ArrowUp"
+                     (let ((pos (delete-maybe e)))
+                       (jump-to-prev-sexp pos)))
+                    ("ArrowDown"
+                     (let ((pos (delete-maybe e)))
+                       (jump-to-next-sexp pos)))
+                    ("("
+                     (let* ((pos (delete-maybe e))
+                            (elem (get-element-by-id (exp-id pos))))
+                       (if (and (keyboard-event-alt-key? e) (eqv? pos id))
+                           (wrap id elem)
+                           (open pos elem))))
+                    (")"
+                     (let ((pos (delete-maybe e)))
+                       (jump-to-eol pos)))
+                    (" "
+                     (prevent-default! e)
+                     (unless (empty? e)
+                       (insert id '#{}#)))
+                    ("Delete"
+                     (when (keyboard-event-ctrl-key? e)
+                       (forward-delete id (event-target e))))
+                    ("Backspace"
+                     (when (keyboard-event-alt-key? e)
+                       (backward-delete id (event-target e))))
+                    (_ (values))))))
+           ,value)))
 
 (define (wrap id elem)
   (call-with-values (lambda () (tree-wrap *tree* id))
@@ -201,14 +442,19 @@
         (replace-with! elem new-elem)
         (focus! new-elem)))))
 
-(define (insert id init elem)
+(define (insert id init)
+  (pk 'insert id)
   (call-with-values (lambda () (tree-insert-atom *tree* id init))
     (lambda (tree new)
-      (let* ((parent (tree-parent tree new))
-             (new-elem (shtml->dom (tree->shtml tree parent))))
+      (pk 'new new)
+      (let* ((parent (pk 'parent (tree-parent tree new)))
+             (parent-elem (pk 'parent-elem (get-element-by-id (exp-id parent))))
+             (new-parent-elem (shtml->dom (tree->shtml tree parent))))
         (set! *tree* tree)
-        (replace-with! (get-element-by-id (exp-id parent)) new-elem)
-        (edit new (get-element-by-id (exp-id new)))))))
+        (replace-with! parent-elem new-parent-elem)
+        (let ((focus-elem (get-element-by-id (exp-id new))))
+          (focus! focus-elem)
+          (set-selection-position! (selection) focus-elem 1))))))
 
 (define (open id elem)
   (call-with-values (lambda () (tree-open *tree* id))
@@ -218,6 +464,18 @@
         (set! *tree* tree)
         (replace-with! (get-element-by-id (exp-id parent)) new-elem)
         (focus! (get-element-by-id (exp-id new)))))))
+
+(define (jump-to-prev id)
+  (focus-maybe (tree-prev *tree* id)))
+
+(define (jump-to-next id)
+  (focus-maybe (tree-next *tree* id)))
+
+(define (jump-to-prev-sexp id)
+  (focus-maybe (tree-prev-sexp *tree* id)))
+
+(define (jump-to-next-sexp id)
+  (focus-maybe (tree-next-sexp *tree* id)))
 
 (define (jump-to-eol id)
   (match (tree-next-eol *tree* id)
@@ -245,39 +503,19 @@
           (replace-with! (get-element-by-id (exp-id parent)) new-elem)))
       (focus! (get-element-by-id (exp-id focus))))))
 
-(define (atom->shtml value)
-  (match value
-    ((? symbol?)
-     ;; TODO: Only highlight special forms that are at the head
-     ;; of a list.
-     `(span (@ (class ,(if (special-form? value)
-                           "editor-special-form"
-                           "editor-symbol")))
-            ,(format #f "~s" value)))
-    ((? keyword?)
-     `(span (@ (class "editor-keyword"))
-            ,(format #f "~s" value)))
-    ((? string?)
-     `(span (@ (class "editor-string"))
-            ,(format #f "~s" value)))
-    ((? number?)
-     `(span (@ (class "editor-number"))
-            ,value))
-    ((or #t #f)
-     `(span (@ (class "editor-boolean"))
-            ,value))))
-
 (define* (tree->shtml tree #:optional (root (tree-root tree)))
   (let lp ((id root))
     (match (tree-ref tree id)
+      (($ <node:atom> _ (? string? value))
+       (string-node-shtml id value))
       (($ <node:atom> _ value)
-       (node-element id 'atom (list (atom->shtml value))))
+       (atom-node-shtml id value))
       ;; TODO: To properly highlight parens, keep track of indentation
       ;; level while rendering and add a CSS class for each unique
       ;; color.
       (($ <node:compound> _ 'list children eol)
-       (node-element
-        id 'compound
+       (noneditable-node-shtml
+        id "editor-compound"
         `(,(open-delimiter "(")
           ,@(match children
               (() '())

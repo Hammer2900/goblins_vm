@@ -11,6 +11,7 @@ body {
     max-width: 50vw;
     padding: 1rem;
     border: 1px solid;
+    caret-color: #272a32;
 }
 
 .editor-node {
@@ -28,15 +29,22 @@ body {
     flex-wrap: wrap;
 }
 
-.editor-compound .editor-node:not(:nth-child(-n+2)):not(:last-child) {
+.editor-compound :not(:nth-child(-n+2)):not(:last-child) {
     margin-left: 1ch;
 }
 
 /* Highlight currently focused node */
-.editor-node:focus {
+.editor-node:focus,
+.editor-string-inner:focus,
+.editor-string-delimiter:focus {
     outline: none;
 }
-.editor-atom:focus, .editor-compound:focus > .editor-delimiter:first-child, .editor-delimiter-close:focus {
+.editor-atom:focus,
+.editor-compound:focus > .editor-delimiter:first-child,
+.editor-delimiter-close:focus,
+.editor-string:focus > :first-child,
+.editor-string-delimiter:focus,
+.editor-string-inner:focus {
     background: #4ec8ff;
 }
 
@@ -50,6 +58,10 @@ body {
 
 .editor-delimiter-close {
     margin-top: auto;
+}
+
+.editor-string {
+    display: flex;
 }
 
 /* Highlighting for various kinds of leaf nodes */
@@ -72,7 +84,9 @@ body {
 
 /* Highlight nearest delimiters */
 .editor-compound:has(> .editor-atom:focus, > .editor-delimiter:focus) > .editor-delimiter,
-.editor-compound:focus > .editor-delimiter {
+.editor-compound:focus > .editor-delimiter,
+.editor-string:focus > .editor-string-delimiter,
+.editor-string:has(:focus) .editor-string-delimiter {
     font-weight: bold;
 }
 
