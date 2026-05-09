@@ -8,9 +8,6 @@ async function load() {
       window: {
         getSelection: () => window.getSelection()
       },
-      selection: {
-        setPosition: (sel, node, offset) => sel.setPosition(node, offset)
-      },
       document: {
         body() { return document.body; },
         getElementById: Document.prototype.getElementById.bind(document),
@@ -20,6 +17,7 @@ async function load() {
       element: {
         parent: (elem) => elem.parentElement,
         firstChild: (elem) => elem.firstChild,
+        lastChild: (elem) => elem.lastChild,
         nextSibling: (elem) => elem.nextSibling,
         value(elem) { return elem.value; },
         setValue(elem, value) { elem.value = value; },
@@ -37,6 +35,7 @@ async function load() {
         preventDefault: (e) => e.preventDefault(),
         stopPropagation: (e) => e.stopPropagation(),
         target: (e) => e.target,
+        currentTarget: (e) => e.currentTarget,
         keyboardKey: (e) => e.key,
         keyboardAltKey: (e) => e.altKey,
         keyboardCtrlKey: (e) => e.ctrlKey,
@@ -49,6 +48,12 @@ async function load() {
         startOffset: (r) => r.startOffset,
         endContainer: (r) => r.endContainer,
         endOffset: (r) => r.endOffset
+      },
+      selection: {
+        isCollapsed: (s) => s.isCollapsed,
+        collapse: (s, node, offset) => s.collapse(node, offset),
+        setBaseAndExtent: (s, an, ao, fn, fo) => s.setBaseAndExtent(an, ao, fn, fo),
+        setPosition: (s, node, offset) => s.setPosition(node, offset)
       }
     }
   });

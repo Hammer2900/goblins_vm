@@ -14,6 +14,13 @@ body {
     caret-color: #272a32;
 }
 
+/* For forcing line breaks according to indenting rules. */
+.editor-break {
+    display: flex;
+    flex-basis: 100%;
+    height 0;
+}
+
 .editor-node {
     display: flex;
     margin-bottom: auto;

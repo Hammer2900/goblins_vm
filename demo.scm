@@ -29,6 +29,7 @@
 (define *tree* (make-empty-tree))
 (define *undo-stack* '())
 (define *redo-stack* '())
+(define *selection* (list (tree-root *tree*) 0))
 
 (define (set-tree! tree)
   (set! *undo-stack* (cons *tree* *undo-stack*))
@@ -97,6 +98,13 @@
             (class ,(string-append "editor-node " class))
             (tabindex "0")
             (click ,(lambda (e) (focus! (event-target e))))
+            ;; (dblclick ,(lambda (e)
+            ;;              (let ((elem (event-current-target e)))
+            ;;                (stop-propagation! e)
+            ;;                (set-selection-base-and-extent!
+            ;;                 (selection)
+            ;;                 elem 0
+            ;;                 (element-last-child elem) 1))))
             (keydown ,(lambda (e)
                         (stop-propagation! e)
                         (match (pk 'key (keyboard-event-key e))

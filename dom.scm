@@ -2,16 +2,14 @@
   #:use-module (hoot ffi)
   #:use-module (hoot hashtables)
   #:use-module (ice-9 match)
-  #:export (selection
-            set-selection-position!
-
-            document-body
+  #:export (document-body
             get-element-by-id
             make-text-node
             make-element
 
             element-parent
             element-first-child
+            element-last-child
             element-next-sibling
             append-child!
             remove!
@@ -28,6 +26,7 @@
             prevent-default!
             stop-propagation!
             event-target
+            event-current-target
 
             keyboard-event-key
             keyboard-event-alt-key?
@@ -41,6 +40,12 @@
             range-start-offset
             range-end-container
             range-end-offset
+
+            selection
+            selection-collapsed?
+            selection-collapse!
+            set-selection-base-and-extent!
+            set-selection-position!
 
             shtml->dom))
 
@@ -61,10 +66,6 @@
   "window" "getSelection"
   -> (ref extern))
 
-(define-foreign set-selection-position!
-  "selection" "setPosition"
-  (ref extern) (ref extern) i32 -> none)
-
 (define-foreign document-body
   "document" "body"
   -> (ref extern))
@@ -83,6 +84,9 @@
   (ref extern) -> (ref null extern))
 (define-foreign element-first-child
   "element" "firstChild"
+  (ref extern) -> (ref null extern))
+(define-foreign element-last-child
+  "element" "lastChild"
   (ref extern) -> (ref null extern))
 (define-foreign element-next-sibling
   "element" "nextSibling"
@@ -130,6 +134,9 @@
 (define-foreign event-target
   "event" "target"
   (ref extern) -> (ref extern))
+(define-foreign event-current-target
+  "event" "currentTarget"
+  (ref extern) -> (ref extern))
 
 (define-foreign keyboard-event-key
   "event" "keyboardKey"
@@ -169,6 +176,21 @@
 (define-foreign range-end-offset
   "range" "endOffset"
   (ref extern) -> i32)
+
+(define-foreign %selection-collapsed?
+  "selection" "isCollapsed"
+  (ref extern) -> i32)
+(define (selection-collapsed? selection)
+  (eq? (%selection-collapsed? selection) 1))
+(define-foreign selection-collapse!
+  "selection" "collapse"
+  (ref extern) (ref extern) i32 -> none)
+(define-foreign set-selection-position!
+  "selection" "setPosition"
+  (ref extern) (ref extern) i32 -> none)
+(define-foreign set-selection-base-and-extent!
+  "selection" "setBaseAndExtent"
+  (ref extern) (ref extern) i32 (ref extern) i32 -> none)
 
 (define procedure->external/cached
   (let ((cache (make-weak-key-hashtable)))
