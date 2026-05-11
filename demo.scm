@@ -4,6 +4,19 @@
              (hoot ffi)
              (ice-9 match))
 
+;; Global state (ew!)
+(define *tree* (make-empty-tree))
+(define *undo-stack* '())
+(define *redo-stack* '())
+(define *selection* (list (tree-root *tree*) 0))
+(define *vdom* #f)
+
+(define (render!)
+  (let ((container (get-element-by-id "editor"))
+        (vdom (tree->shtml *tree*)))
+    (virtual-dom-render container *vdom* vdom)
+    (set! *vdom* vdom)))
+
 ;; TODO: Add indenting rules.
 (define %special-forms
   '(and
@@ -26,56 +39,49 @@
     when))
 (define (special-form? x) (memq x %special-forms))
 
-(define *tree* (make-empty-tree))
-(define *undo-stack* '())
-(define *redo-stack* '())
-(define *selection* (list (tree-root *tree*) 0))
-
 (define (set-tree! tree)
-  (set! *undo-stack* (cons *tree* *undo-stack*))
-  (set! *tree* tree)
-  (set! *redo-stack* '()))
+  (unless (eq? tree *tree*)
+    (set! *undo-stack* (cons *tree* *undo-stack*))
+    (set! *tree* tree)
+    (set! *redo-stack* '())
+    (render!)))
 
-(define (undo-tree!)
+(define (undo-tree! id)
   (match *undo-stack*
-    (() *tree*)
-    ((tree . rest)
-     (set! *redo-stack* (cons *tree* *redo-stack*))
-     (set! *tree* tree)
-     (set! *undo-stack* rest)
-     tree)))
+    (() (values))
+    ((new . rest)
+     (let ((old *tree*))
+       (set! *redo-stack* (cons *tree* *redo-stack*))
+       (set! *tree* new)
+       (set! *undo-stack* rest)
+       (render!)
+       (fuzzy-focus! old new id)))))
 
-(define (redo-tree!)
+(define (redo-tree! id)
   (match *redo-stack*
-    (() *tree*)
-    ((tree . rest)
-     (set! *undo-stack* (cons *tree* *undo-stack*))
-     (set! *tree* tree)
-     (set! *redo-stack* rest)
-     tree)))
+    (() (values))
+    ((new . rest)
+     (let ((old *tree*))
+       (set! *undo-stack* (cons *tree* *undo-stack*))
+       (set! *tree* new)
+       (set! *redo-stack* rest)
+       (render!)
+       (fuzzy-focus! old new id)))))
 
-(define (reset! old new id)
-  (unless (eq? old new)
-    (replace-with!
-     (element-first-child (get-element-by-id "editor"))
-     (shtml->dom (tree->shtml new)))
-    (let lp ((id id))
-      (if (tree-ref new id)
-          (focus! (get-element-by-id (exp-id id)))
-          (lp (or (tree-prev old id) (tree-root new)))))))
-
-(define (undo! id)
-  (let* ((old *tree*)
-         (new (undo-tree!)))
-    (reset! old new id)))
-
-(define (redo! id)
-  (let* ((old *tree*)
-         (new (redo-tree!)))
-    (reset! old new id)))
+;; Focus on id, if possible, otherwise focus on something nearish to
+;; it.  Used by undo/redo to move the cursor in a way that hopefully
+;; isn't too surprising.
+(define (fuzzy-focus! old new id)
+  (let lp ((id id))
+    (if (tree-ref new id)
+        (focus! (element-for-id id))
+        (lp (or (tree-prev old id) (tree-root new))))))
 
 (define (exp-id id)
   (string-append "exp-" (number->string id)))
+
+(define (element-for-id id)
+  (get-element-by-id (exp-id id)))
 
 (define (focus-maybe id)
   (when id
@@ -91,9 +97,9 @@
   `(span (@ (class "editor-delimiter editor-delimiter-open")) ,str))
 
 (define (close-delimiter id str)
-  (noneditable-node-shtml id "editor-delimiter editor-delimiter-close" (list str)))
+  (compound-node-shtml id "editor-delimiter editor-delimiter-close" (list str)))
 
-(define (noneditable-node-shtml id class contents)
+(define (compound-node-shtml id class contents)
   `(span (@ (id ,(exp-id id))
             (class ,(string-append "editor-node " class))
             (tabindex "0")
@@ -138,11 +144,11 @@
                           ("z"
                            (when (keyboard-event-ctrl-key? e)
                              (prevent-default! e)
-                             (undo! id)))
+                             (undo-tree! id)))
                           ("y"
                            (when (keyboard-event-ctrl-key? e)
                              (prevent-default! e)
-                             (redo! id)))
+                             (redo-tree! id)))
                           ("Delete"
                            (if (keyboard-event-ctrl-key? e)
                                (forward-delete id (event-target e))
@@ -208,11 +214,11 @@
                     ("z"
                      (when (keyboard-event-ctrl-key? e)
                        (prevent-default! e)
-                       (undo! id)))
+                       (undo-tree! id)))
                     ("y"
                      (when (keyboard-event-ctrl-key? e)
                        (prevent-default! e)
-                       (redo! id)))
+                       (redo-tree! id)))
                     ("Delete"
                      (if (keyboard-event-ctrl-key? e)
                          (forward-delete id (event-target e))
@@ -306,11 +312,11 @@
                           ("z"
                            (when (keyboard-event-ctrl-key? e)
                              (prevent-default! e)
-                             (undo! id)))
+                             (undo-tree! id)))
                           ("y"
                            (when (keyboard-event-ctrl-key? e)
                              (prevent-default! e)
-                             (redo! id)))
+                             (redo-tree! id)))
                           ;; ("Enter"
                           ;;  (prevent-default! e)
                           ;;  (focus!
@@ -359,11 +365,11 @@
                           ("z"
                            (when (keyboard-event-ctrl-key? e)
                              (prevent-default! e)
-                             (undo! id)))
+                             (undo-tree! id)))
                           ("y"
                            (when (keyboard-event-ctrl-key? e)
                              (prevent-default! e)
-                             (redo! id)))
+                             (redo-tree! id)))
                           ("Delete"
                            (cond
                             ((keyboard-event-ctrl-key? e)
@@ -510,11 +516,11 @@
                     ("z"
                      (when (keyboard-event-ctrl-key? e)
                        (prevent-default! e)
-                       (undo! id)))
+                       (undo-tree! id)))
                     ("y"
                      (when (keyboard-event-ctrl-key? e)
                        (prevent-default! e)
-                       (redo! id)))
+                       (redo-tree! id)))
                     ("Delete"
                      (when (keyboard-event-ctrl-key? e)
                        (forward-delete id (event-target e))))
@@ -529,29 +535,21 @@
     (lambda (tree new)
       (let ((new-elem (shtml->dom (tree->shtml tree new))))
         (set-tree! tree)
-        (replace-with! elem new-elem)
-        (focus! new-elem)))))
+        (focus! (element-for-id new))))))
 
 (define (insert id init)
   (call-with-values (lambda () (tree-insert-atom *tree* id init))
     (lambda (tree new)
-      (let* ((parent (tree-parent tree new))
-             (parent-elem (get-element-by-id (exp-id parent)))
-             (new-parent-elem (shtml->dom (tree->shtml tree parent))))
-        (set-tree! tree)
-        (replace-with! parent-elem new-parent-elem)
-        (let ((focus-elem (get-element-by-id (exp-id new))))
-          (focus! focus-elem)
-          (set-selection-position! (selection) focus-elem 1))))))
+      (set-tree! tree)
+      (let ((focus-elem (element-for-id new)))
+        (focus! focus-elem)
+        (set-selection-position! (selection) focus-elem 1)))))
 
 (define (open id elem)
   (call-with-values (lambda () (tree-open *tree* id))
     (lambda (tree new)
-      (let* ((parent (tree-parent tree new))
-             (new-elem (shtml->dom (tree->shtml tree parent))))
-        (set-tree! tree)
-        (replace-with! (get-element-by-id (exp-id parent)) new-elem)
-        (focus! (get-element-by-id (exp-id new)))))))
+      (set-tree! tree)
+      (focus! (element-for-id new)))))
 
 (define (jump-to-prev id)
   (focus-maybe (tree-prev *tree* id)))
@@ -568,28 +566,19 @@
 (define (jump-to-eol id)
   (match (tree-next-eol *tree* id)
     (#f (values))
-    (focus
-     (focus! (get-element-by-id (exp-id focus))))))
+    (id (focus! (element-for-id id)))))
 
 (define (forward-delete id elem)
   (call-with-values (lambda () (tree-forward-delete *tree* id))
-    (lambda (tree focus)
-      (unless (eq? tree *tree*)
-        (let* ((parent (tree-parent tree focus))
-               (new-elem (shtml->dom (tree->shtml tree parent))))
-          (set-tree! tree)
-          (replace-with! (get-element-by-id (exp-id parent)) new-elem)))
-      (focus! (get-element-by-id (exp-id focus))))))
+    (lambda (tree focused)
+      (set-tree! tree)
+      (focus! (element-for-id focused)))))
 
 (define (backward-delete id elem)
   (call-with-values (lambda () (tree-backward-delete *tree* id))
-    (lambda (tree focus)
-      (unless (eq? tree *tree*)
-        (let* ((parent (tree-parent tree focus))
-               (new-elem (shtml->dom (tree->shtml tree parent))))
-          (set-tree! tree)
-          (replace-with! (get-element-by-id (exp-id parent)) new-elem)))
-      (focus! (get-element-by-id (exp-id focus))))))
+    (lambda (tree focused)
+      (set-tree! tree)
+      (focus! (element-for-id focused)))))
 
 (define* (tree->shtml tree #:optional (root (tree-root tree)))
   (let lp ((id root))
@@ -602,7 +591,7 @@
       ;; level while rendering and add a CSS class for each unique
       ;; color.
       (($ <node:compound> _ 'list children eol)
-       (noneditable-node-shtml
+       (compound-node-shtml
         id "editor-compound"
         `(,(open-delimiter "(")
           ,@(match children
@@ -623,5 +612,6 @@
  (shtml->dom
   `(article
     (h1 "Structural editor demo")
-    (main (@ (id "editor") (class "editor"))
-          ,(tree->shtml *tree*)))))
+    (main (@ (id "editor") (class "editor"))))))
+
+(render!)

@@ -2,6 +2,7 @@
   #:use-module (hoot ffi)
   #:use-module (hoot hashtables)
   #:use-module (ice-9 match)
+  #:use-module (srfi srfi-11)
   #:export (document-body
             get-element-by-id
             make-text-node
@@ -47,7 +48,8 @@
             set-selection-base-and-extent!
             set-selection-position!
 
-            shtml->dom))
+            shtml->dom
+            virtual-dom-render))
 
 (define-foreign array-length
   "array" "length"
@@ -222,7 +224,7 @@
      ;; Create a new element with the given tag.
      (let ((elem (make-element (symbol->string tag))))
        (define (add-children children)
-         ;; Recursively call sxml->dom for each child node and
+         ;; Recursively call shtml->dom for each child node and
          ;; append it to elem.
          (for-each (lambda (child)
                      (append-child! elem (shtml->dom child)))
@@ -246,3 +248,161 @@
          ;; No attributes, just a list of child nodes.
          (children (add-children children)))
        elem))))
+
+(define (virtual-dom-render root old new)
+  (define (attrs+children exp)
+    (match exp
+      ((('@ . attrs) . children)
+       (values attrs children))
+      (children
+       (values '() children))))
+  (define (find-attr attrs name)
+    (match attrs
+      (() #f)
+      ((attr . rest)
+       (match attr
+         ((name* val)
+          (if (eq? name name*)
+              val
+              (find-attr rest name)))))))
+  (define (update-attrs node old-attrs new-attrs)
+    (for-each
+     (lambda (attr)
+       (match attr
+         ((name val)
+          (let ((name-str (symbol->string name)))
+            (match (find-attr old-attrs name)
+              ;; No existing attr/listener, add new one.
+              (#f
+               (match val
+                 ((? string?)
+                  (set-attribute! node name-str val))
+                 ((? procedure?)
+                  (add-event-listener!/wrap node name-str val))))
+              ;; Replace old attr or listener with new.
+              (old-val
+               (match val
+                 ((? string?)
+                  (unless (equal? old-val val)
+                    (set-attribute! node name-str val)))
+                 ((? procedure?)
+                  (unless (eq? old-val val)
+                    (remove-event-listener!/wrap node name-str old-val)
+                    (add-event-listener!/wrap node name-str val))))))))))
+     new-attrs)
+    ;; Delete old attrs that aren't in new.
+    (for-each
+     (lambda (attr)
+       (match attr
+         ((name val)
+          (let ((name-str (symbol->string name)))
+            (match (find-attr new-attrs name)
+              (#f
+               (match val
+                 ((? string?)
+                  (remove-attribute! node name-str))
+                 ((? procedure?)
+                  (remove-event-listener!/wrap node name-str val))))
+              (_ #t))))))
+     old-attrs))
+  ;; Remove node and all siblings that follow.
+  (define (remove-tail node)
+    (unless (external-null? node)
+      (let ((next (element-next-sibling node)))
+        (remove! node)
+        (remove-tail next))))
+  (define (render-and-replace node shtml)
+    (let ((node* (shtml->dom shtml)))
+      (replace-with! node node*)
+      node*))
+  (let lp ((node (element-first-child root))
+           (parent root)
+           (old old)
+           (new new))
+    (match old
+      (#f
+       ;; It's the first render, so clear out whatever might be in the
+       ;; actual DOM and render the entire tree.  No diffing
+       ;; necessary.
+       (let ((node* (shtml->dom new)))
+         (remove-tail node)
+         (append-child! parent node*)
+         node*))
+      ;; Replace text nodes with either a new text node if the text
+      ;; has changed, or an element subtree if the text has been
+      ;; replaced by an element.
+      ((? string?)
+       (if (and (string? new) (string=? old new))
+           node
+           (render-and-replace node new)))
+      ((? number? x)
+       (if (and (number? new) (= old new))
+           node
+           (render-and-replace node new)))
+      ((? symbol? sym)
+       (if (and (symbol? new) (eq? old new))
+           node
+           (render-and-replace node new)))
+      ((? keyword? kw)
+       (if (and (keyword? new) (eq? old new))
+           node
+           (render-and-replace node new)))
+      (#t
+       (if (eq? new #t)
+           node
+           (render-and-replace node new)))
+      (#f
+       (if (eq? new #f)
+           node
+           (render-and-replace node new)))
+      (((? symbol? old-tag) . old-rest)
+       (let-values (((old-attrs old-children)
+                     (attrs+children old-rest)))
+         (match new
+           ((? string?)
+            ;; Old node was an element, but the new node is a text
+            ;; node, so replace the element subtree with a text node.
+            (let ((node* (make-text-node new)))
+              (replace-with! node node*)
+              node*))
+           (((? symbol? new-tag) . new-rest)
+            (let-values (((new-attrs new-children)
+                          (attrs+children new-rest)))
+              (cond
+               ;; The element tag is the same, so modify the inner
+               ;; contents of the element if necessary.
+               ((eq? old-tag new-tag)
+                (update-attrs node old-attrs new-attrs)
+                (let ((parent node))
+                  (let child-lp ((node (element-first-child parent))
+                                 (old old-children)
+                                 (new new-children))
+                    (match old
+                      (()
+                       ;; The old child list is empty, so diffing
+                       ;; stops here.  All remaining children in the
+                       ;; new list are fresh elements that need to be
+                       ;; added.
+                       (for-each (lambda (new)
+                                   (append-child! parent (shtml->dom new)))
+                                 new))
+                      ((old-child . old-rest)
+                       (match new
+                         ;; The new child list is empty, so any
+                         ;; remaining children in the old child list
+                         ;; need to be removed, including the current
+                         ;; one.
+                         (() (remove-tail node))
+                         ;; Recursively diff old and new child
+                         ;; elements.
+                         ((new-child . new-rest)
+                          (let ((node* (lp node parent old-child new-child)))
+                            (child-lp (element-next-sibling node*)
+                                      old-rest new-rest))))))))
+                node)
+               ;; New element tag is different than the old one, so
+               ;; replace the entire element subtree.
+               (else
+                (let ((node* (shtml->dom new)))
+                  (replace-with! node node*)
+                  node*)))))))))))
