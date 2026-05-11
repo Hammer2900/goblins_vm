@@ -24,6 +24,7 @@ body {
 .editor-node {
     display: flex;
     margin-bottom: auto;
+    white-space: nowrap;
 }
 
 .editor-compound {
@@ -31,12 +32,11 @@ body {
     flex-wrap: wrap;
 }
 
-.editor-indent-group {
+.editor-group {
     display: flex;
-    flex-wrap: wrap;
 }
 
-.editor-compound :not(:nth-child(-n+2)):not(:last-child) {
+.editor-compound > :not(:first-child) {
     margin-left: 1ch;
 }
 
@@ -47,8 +47,8 @@ body {
     outline: none;
 }
 .editor-atom:focus,
-.editor-compound:focus > .editor-delimiter:first-child,
-.editor-delimiter-close:focus,
+.editor-compound:focus > .editor-group:first-child > .editor-delimiter:first-child,
+.editor-delimiter:focus,
 .editor-string:focus > :first-child,
 .editor-string-delimiter:focus,
 .editor-string-inner:focus {
@@ -99,24 +99,21 @@ body {
 
 /* Rainbow delimiters */
 /* NostalgOS palette https://lospec.com/palette-list/nostalgos-12 */
-.editor-compound .editor-delimiter {
-    color: #21525a;
-}
-.editor-compound .editor-compound .editor-delimiter {
-    color: #eeb24a;
-}
-.editor-compound .editor-compound .editor-compound .editor-delimiter {
-    color: #2152a5;
-}
-.editor-compound .editor-compound .editor-compound .editor-compound .editor-delimiter {
+.editor-highlight-0 {
     color: #dc6250;
 }
-.editor-compound .editor-compound .editor-compound .editor-compound .editor-compound .editor-delimiter {
+.editor-highlight-1 {
+    color: #ffd183;
+}
+.editor-highlight-2 {
     color: #55927f;
 }
-.editor-compound .editor-compound .editor-compound .editor-compound .editor-compound .editor-compound .editor-delimiter {
-    color: #844790;
+.editor-highlight-3 {
+    color: #21525a;
 }
-.editor-compound .editor-compound .editor-compound .editor-compound .editor-compound .editor-compound .editor-compound .editor-delimiter {
-    color: #272a32;
+.editor-highlight-4 {
+    color: #2152a5;
+}
+.editor-highlight-5 {
+    color: #844790;
 }

@@ -137,14 +137,13 @@
          (atom (make-atom-node parent value)))
     (values (hashmap-set nodes id atom) id)))
 
-(define* (add-list-node nodes #:key parent (children '()))
+(define* (add-list-node nodes #:key (id (fresh-id)) parent (children '()))
   (let* ((eol-id (fresh-id))
-         (list-id (fresh-id))
-         (eol (make-eol-node list-id))
+         (eol (make-eol-node id))
          (list-node (make-compound-node parent 'list children eol-id))
-         (nodes (hashmap-set nodes list-id list-node))
+         (nodes (hashmap-set nodes id list-node))
          (nodes (hashmap-set nodes eol-id eol)))
-    (values nodes list-id)))
+    (values nodes id)))
 
 ;; Not really empty, but with an empty list as the root.
 (define (make-empty-tree)
@@ -196,14 +195,15 @@
     (match exp
       ((children ...)
        (let ((ids (map (lambda (_) (fresh-id)) children)))
-         (call-with-values (lambda () (add-list-node nodes #:children ids))
-           (lambda (tree id)
+         (call-with-values (lambda () (add-list-node nodes #:id id #:children ids))
+           (lambda (nodes id)
              (fold (lambda (child child-id nodes)
                      (walk nodes child child-id id))
                    nodes children ids)))))
       (_ (hashmap-set nodes id (make-atom-node parent exp)))))
-  (let ((root (fresh-id)))
-    (make-tree root (walk (hashvmap) exp root #f))))
+  (let* ((root (fresh-id))
+         (nodes (walk (hashvmap) exp root #f)))
+    (make-tree root nodes)))
 
 ;; Forward and backward pre-order traversal of trees.
 (define (tree-next tree id)

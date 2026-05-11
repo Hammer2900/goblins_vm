@@ -87,17 +87,20 @@
   (when id
     (focus! (get-element-by-id (exp-id id)))))
 
-(define (edit-begin! elem)
-  (set-attribute! elem "contenteditable" "plaintext-only"))
+(define (highlight-class i)
+  (string-append "editor-highlight-" (number->string (modulo i 6))))
 
-(define (edit-end! elem)
-  (set-attribute! elem "contenteditable" "false"))
+(define* (open-delimiter id depth #:optional (str "("))
+  (compound-node-shtml id
+                       (string-append "editor-delimiter editor-delimiter-open "
+                                      (highlight-class depth))
+                       (list str)))
 
-(define (open-delimiter str)
-  `(span (@ (class "editor-delimiter editor-delimiter-open")) ,str))
-
-(define (close-delimiter id str)
-  (compound-node-shtml id "editor-delimiter editor-delimiter-close" (list str)))
+(define* (close-delimiter id depth #:optional (str ")"))
+  (compound-node-shtml id
+                       (string-append "editor-delimiter editor-delimiter-close "
+                                      (highlight-class depth))
+                       (list str)))
 
 (define (compound-node-shtml id class contents)
   `(span (@ (id ,(exp-id id))
@@ -518,9 +521,8 @@
 (define (wrap id elem)
   (call-with-values (lambda () (tree-wrap *tree* id))
     (lambda (tree new)
-      (let ((new-elem (shtml->dom (tree->shtml tree new))))
-        (set-tree! tree)
-        (focus! (element-for-id new))))))
+      (set-tree! tree)
+      (focus! (element-for-id new)))))
 
 (define (insert id init)
   (call-with-values (lambda () (tree-insert-atom *tree* id init))
@@ -565,32 +567,67 @@
       (set-tree! tree)
       (focus! (element-for-id focused)))))
 
-(define* (tree->shtml tree #:optional (root (tree-root tree)))
-  (let lp ((id root))
+(define* (tree->shtml tree)
+  (let lp ((id (tree-root tree))
+           (depth 0)
+           (opens '())
+           (closes '()))
+    (define (open-delimiters)
+      (map (match-lambda
+             ((id . depth)
+              (open-delimiter id depth)))
+           (reverse opens)))
+    (define (close-delimiters)
+      (map (match-lambda
+             ((id . depth)
+              (close-delimiter id depth)))
+           closes))
     (match (tree-ref tree id)
       (($ <node:atom> _ (? string? value))
-       (string-node-shtml id value))
+       (let ((atom (string-node-shtml id value)))
+         (if (and (null? opens) (null? closes))
+             atom
+             `(span (@ (class "editor-group"))
+                    ,@(open-delimiters)
+                    ,atom
+                    ,@(close-delimiters)))))
       (($ <node:atom> _ value)
-       (atom-node-shtml id value))
+       (let ((atom (atom-node-shtml id value)))
+         (if (and (null? opens) (null? closes))
+             atom
+             `(span (@ (class "editor-group"))
+                    ,@(open-delimiters)
+                    ,atom
+                    ,@(close-delimiters)))))
       ;; TODO: To properly highlight parens, keep track of indentation
       ;; level while rendering and add a CSS class for each unique
       ;; color.
       (($ <node:compound> _ 'list children eol)
-       (compound-node-shtml
-        id "editor-compound"
-        `(,(open-delimiter "(")
-          ,@(match children
-              (() '())
-              ((first . rest)
-               (cons (lp first)
-                     (let lp2 ((rest rest))
-                       (match rest
-                         (() '())
-                         ;; We use whitespace here for the sake of copying
-                         ;; code as plain text.
-                         ((child . rest)
-                          (cons* " " (lp child) (lp2 rest))))))))
-          ,(close-delimiter eol ")")))))))
+       `(span (@ (class "editor-compound"))
+              ,@(match children
+                  (()
+                   `((span (@ (class "editor-group"))
+                           ,@(open-delimiters)
+                           ,(open-delimiter id depth)
+                           ,(close-delimiter id depth)
+                           ,@(close-delimiters))))
+                  ((child)
+                   `(,(lp child (1+ depth)
+                          (cons (cons id depth) opens)
+                          (cons (cons eol depth) closes))))
+                  ((first . rest)
+                   `(,(lp first (1+ depth) (cons (cons id depth) opens) '())
+                     ,@(let lp2 ((rest rest))
+                         (match rest
+                           ((last)
+                            (list (lp last (1+ depth) '()
+                                      (cons (cons eol depth) closes))))
+                           ((middle . rest)
+                            ;; We use whitespace here for the sake of copying
+                            ;; code as plain text out of the browser.
+                            (cons* " "
+                                   (lp middle (1+ depth) '() '())
+                                   (lp2 rest)))))))))))))
 
 (append-child!
  (document-body)
