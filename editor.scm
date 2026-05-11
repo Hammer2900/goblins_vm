@@ -312,9 +312,7 @@
      (match (tree-ref tree parent)
        (($ <node:compound> _ _ children eol)
         (if (eqv? id eol)
-            (match children
-              (() parent)
-              ((_ ... last) last))
+            parent
             (let lp ((children children) (prev #f))
               (match children
                 ((child . children)
