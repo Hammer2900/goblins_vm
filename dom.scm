@@ -335,15 +335,15 @@
        (if (and (string? new) (string=? old new))
            node
            (render-and-replace node new)))
-      ((? number? x)
+      ((? number?)
        (if (and (number? new) (= old new))
            node
            (render-and-replace node new)))
-      ((? symbol? sym)
+      ((? symbol?)
        (if (and (symbol? new) (eq? old new))
            node
            (render-and-replace node new)))
-      ((? keyword? kw)
+      ((? keyword?)
        (if (and (keyword? new) (eq? old new))
            node
            (render-and-replace node new)))
@@ -359,12 +359,10 @@
        (let-values (((old-attrs old-children)
                      (attrs+children old-rest)))
          (match new
-           ((? string?)
-            ;; Old node was an element, but the new node is a text
-            ;; node, so replace the element subtree with a text node.
-            (let ((node* (make-text-node new)))
-              (replace-with! node node*)
-              node*))
+           ;; Old node was an element, but the new node is a text
+           ;; node, so replace the element subtree with a text node.
+           ((or (? string?) (? number?) (? symbol?) (? keyword?) #t #f)
+            (render-and-replace node new))
            (((? symbol? new-tag) . new-rest)
             (let-values (((new-attrs new-children)
                           (attrs+children new-rest)))
@@ -396,9 +394,9 @@
                          ;; Recursively diff old and new child
                          ;; elements.
                          ((new-child . new-rest)
-                          (let ((node* (lp node parent old-child new-child)))
-                            (child-lp (element-next-sibling node*)
-                                      old-rest new-rest))))))))
+                          (let ((next (element-next-sibling node)))
+                            (lp node parent old-child new-child)
+                            (child-lp next old-rest new-rest))))))))
                 node)
                ;; New element tag is different than the old one, so
                ;; replace the entire element subtree.

@@ -39,12 +39,12 @@
     when))
 (define (special-form? x) (memq x %special-forms))
 
-(define (set-tree! tree)
+(define* (set-tree! tree #:optional (render? #t))
   (unless (eq? tree *tree*)
     (set! *undo-stack* (cons *tree* *undo-stack*))
     (set! *tree* tree)
     (set! *redo-stack* '())
-    (render!)))
+    (when render? (render!))))
 
 (define (undo-tree! id)
   (match *undo-stack*
@@ -104,13 +104,6 @@
             (class ,(string-append "editor-node " class))
             (tabindex "0")
             (click ,(lambda (e) (focus! (event-target e))))
-            ;; (dblclick ,(lambda (e)
-            ;;              (let ((elem (event-current-target e)))
-            ;;                (stop-propagation! e)
-            ;;                (set-selection-base-and-extent!
-            ;;                 (selection)
-            ;;                 elem 0
-            ;;                 (element-last-child elem) 1))))
             (keydown ,(lambda (e)
                         (stop-propagation! e)
                         (match (pk 'key (keyboard-event-key e))
@@ -235,11 +228,7 @@
            (span (@ (class "editor-string-delimiter")) "\"")
            (span (@ (class "editor-string-inner")
                     (tabindex "0")
-                    (contenteditable "false")
-                    (focusin ,(lambda (e)
-                                (edit-begin! (event-target e))))
-                    (focusout ,(lambda (e)
-                                 (edit-end! (event-target e))))
+                    (contenteditable "plaintext-only")
                     (beforeinput
                      ,(lambda (e)
                         (let ((elem (event-target e)))
@@ -288,7 +277,7 @@
                               (let ((new (element-inner-text (event-target e))))
                                 (unless (equal? value new)
                                   (set! value new)
-                                  (set-tree! (tree-set-atom *tree* id new))))))
+                                  (set-tree! (tree-set-atom *tree* id new) #f)))))
                     (keydown
                      ,(lambda (e)
                         (stop-propagation! e)
@@ -422,13 +411,9 @@
          ((or #t #f) "editor-boolean"))))
     `(span (@ (id ,elem-id)
               (class ,(node-classes))
-              (contenteditable "false")
+              (contenteditable "plaintext-only")
               (tabindex "0")
-              (focusin ,(lambda (e)
-                          (edit-begin! (event-target e))))
-              (focusout ,(lambda (e)
-                           (edit-end! (event-target e))
-                           (delete-maybe e)))
+              (focusout ,(lambda (e) (delete-maybe e)))
               (beforeinput
                ,(lambda (e)
                   (let ((elem (event-target e))
@@ -475,7 +460,7 @@
                                #:unwind? #t)))
                     (unless (equal? value new)
                       (set! value new)
-                      (set-tree! (tree-set-atom *tree* id new))
+                      (set-tree! (tree-set-atom *tree* id new) #f)
                       (set-attribute! (event-target e) "class"
                                       (node-classes))))))
               (keydown

@@ -325,26 +325,29 @@
 (define (tree-wrap tree id)
   (match tree
     (($ <tree> root nodes)
-     (let* ((node (hashmap-ref nodes id))
-            (parent (node-parent node)))
-       (call-with-values (lambda ()
-                           (add-list-node nodes
-                                          #:parent parent
-                                          #:children (list id)))
-         (lambda (nodes wrapper)
-           ;; Rewrite selected node to point at new parent wrapper.
-           (let* ((node (set-node-parent node wrapper))
-                  (nodes (hashmap-set nodes id node)))
-             ;; Either replace the root node with the new wrapper node
-             ;; or splice the new wrapper node into the middle of the
-             ;; tree somewhere.
-             (values (if (eqv? id root)
-                         (make-tree wrapper nodes)
-                         (let* ((parent-node (hashmap-ref nodes parent))
-                                (parent-node (replace-child parent-node id wrapper))
-                                (nodes (hashmap-set nodes parent parent-node)))
-                           (make-tree root nodes)))
-                     wrapper))))))))
+     ;; Can't wrap the root.
+     (if (eqv? id root)
+         (values tree id)
+         (let* ((node (hashmap-ref nodes id))
+                (parent (node-parent node)))
+           (call-with-values (lambda ()
+                               (add-list-node nodes
+                                              #:parent parent
+                                              #:children (list id)))
+             (lambda (nodes wrapper)
+               ;; Rewrite selected node to point at new parent wrapper.
+               (let* ((node (set-node-parent node wrapper))
+                      (nodes (hashmap-set nodes id node)))
+                 ;; Either replace the root node with the new wrapper node
+                 ;; or splice the new wrapper node into the middle of the
+                 ;; tree somewhere.
+                 (values (if (eqv? id root)
+                             (make-tree wrapper nodes)
+                             (let* ((parent-node (hashmap-ref nodes parent))
+                                    (parent-node (replace-child parent-node id wrapper))
+                                    (nodes (hashmap-set nodes parent parent-node)))
+                               (make-tree root nodes)))
+                         wrapper)))))))))
 
 (define (tree-open tree id)
   (match tree
