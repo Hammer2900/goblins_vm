@@ -617,17 +617,18 @@
                           (cons (cons eol depth) closes))))
                   ((first . rest)
                    `(,(lp first (1+ depth) (cons (cons id depth) opens) '())
-                     ,@(let lp2 ((rest rest))
-                         (match rest
-                           ((last)
-                            (list (lp last (1+ depth) '()
-                                      (cons (cons eol depth) closes))))
-                           ((middle . rest)
-                            ;; We use whitespace here for the sake of copying
-                            ;; code as plain text out of the browser.
-                            (cons* " "
-                                   (lp middle (1+ depth) '() '())
-                                   (lp2 rest)))))))))))))
+                     (span (@ (class "editor-arguments"))
+                           ,@(let lp2 ((rest rest))
+                               (match rest
+                                 ((last)
+                                  (list (lp last (1+ depth) '()
+                                            (cons (cons eol depth) closes))))
+                                 ((middle . rest)
+                                  ;; We use whitespace here for the sake of copying
+                                  ;; code as plain text out of the browser.
+                                  (cons* " "
+                                         (lp middle (1+ depth) '() '())
+                                         (lp2 rest))))))))))))))
 
 (append-child!
  (document-body)

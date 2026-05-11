@@ -29,14 +29,18 @@ body {
 
 .editor-compound {
     display: flex;
-    flex-wrap: wrap;
 }
 
 .editor-group {
     display: flex;
 }
 
-.editor-compound > :not(:first-child) {
+.editor-arguments {
+    display: flex;
+    flex-wrap: wrap;
+}
+
+.editor-arguments > * {
     margin-left: 1ch;
 }
 
