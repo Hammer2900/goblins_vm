@@ -609,7 +609,7 @@
                    `((span (@ (class "editor-group"))
                            ,@(open-delimiters)
                            ,(open-delimiter id depth)
-                           ,(close-delimiter id depth)
+                           ,(close-delimiter eol depth)
                            ,@(close-delimiters))))
                   ((child)
                    `(,(lp child (1+ depth)
