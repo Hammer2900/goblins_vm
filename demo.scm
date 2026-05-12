@@ -2,7 +2,8 @@
              (editor)
              (fibers scheduler)
              (hoot ffi)
-             (ice-9 match))
+             (ice-9 match)
+             (srfi srfi-1))
 
 ;; Global state (ew!)
 (define *tree* (make-empty-tree))
@@ -17,27 +18,30 @@
     (virtual-dom-render container *vdom* vdom)
     (set! *vdom* vdom)))
 
-;; TODO: Add indenting rules.
 (define %special-forms
-  '(and
-    call-with-prompt
-    call-with-values
-    define
-    define*
-    define-module
-    define-record-type
-    if
-    lambda
-    let
-    let*
-    letrec
-    letrec*
-    match
-    or
-    set!
-    unless
-    when))
-(define (special-form? x) (memq x %special-forms))
+  '((and . #t)
+    (call-with-prompt . 1)
+    (call-with-values . 1)
+    (define . 1)
+    (define* . 1)
+    (define-module . 1)
+    (define-record-type . 1)
+    (if . #t)
+    (lambda . 1)
+    (let . 1)
+    (let* . 1)
+    (letrec . 1)
+    (letrec* . 1)
+    (match . 1)
+    (or . #t)
+    (set! . #t)
+    (unless . 1)
+    (when . 1)))
+(define (special-form-arguments x)
+  (assq-ref %special-forms x))
+
+(define (string->sexp str)
+  (call-with-input-string str read))
 
 (define* (set-tree! tree #:optional (render? #t))
   (unless (eq? tree *tree*)
@@ -74,7 +78,7 @@
 (define (fuzzy-focus! old new id)
   (let lp ((id id))
     (if (tree-ref new id)
-        (focus! (element-for-id id))
+        (element-focus! (element-for-id id))
         (lp (or (tree-prev old id) (tree-root new))))))
 
 (define (exp-id id)
@@ -85,31 +89,31 @@
 
 (define (focus-maybe id)
   (when id
-    (focus! (get-element-by-id (exp-id id)))))
+    (element-focus! (get-element-by-id (exp-id id)))))
 
 (define (highlight-class i)
   (string-append "editor-highlight-" (number->string (modulo i 6))))
 
 (define* (open-delimiter id depth #:optional (str "("))
-  (compound-node-shtml id
-                       (string-append "editor-delimiter editor-delimiter-open "
-                                      (highlight-class depth))
-                       (list str)))
+  (paren-node-shtml id
+                    (string-append "editor-delimiter editor-delimiter-open "
+                                   (highlight-class depth))
+                    str))
 
 (define* (close-delimiter id depth #:optional (str ")"))
-  (compound-node-shtml id
-                       (string-append "editor-delimiter editor-delimiter-close "
-                                      (highlight-class depth))
-                       (list str)))
+  (paren-node-shtml id
+                    (string-append "editor-delimiter editor-delimiter-close "
+                                   (highlight-class depth))
+                    str))
 
-(define (compound-node-shtml id class contents)
+(define (paren-node-shtml id class str)
   `(span (@ (id ,(exp-id id))
             (class ,(string-append "editor-node " class))
             (tabindex "0")
-            (click ,(lambda (e) (focus! (event-target e))))
+            (click ,(lambda (e) (element-focus! (event-target e))))
             (keydown ,(lambda (e)
                         (stop-propagation! e)
-                        (match (pk 'key (keyboard-event-key e))
+                        (match (pk 'paren-key (keyboard-event-key e))
                           ("ArrowLeft"
                            (if (keyboard-event-ctrl-key? e)
                                (jump-to-prev-sexp id)
@@ -122,8 +126,8 @@
                            (jump-to-prev-sexp id))
                           ("ArrowDown"
                            (jump-to-next-sexp id))
-                          ;; ("Enter"
-                          ;;  (insert id (string->symbol "")))
+                          ("Enter"
+                           (insert id (string->symbol "")))
                           ("("
                            (let ((elem (event-target e)))
                              (if (keyboard-event-alt-key? e)
@@ -138,13 +142,21 @@
                            (prevent-default! e)
                            (insert id ""))
                           ("z"
-                           (when (keyboard-event-ctrl-key? e)
+                           (cond
+                            ((keyboard-event-ctrl-key? e)
                              (prevent-default! e)
-                             (undo-tree! id)))
+                             (undo-tree! id))
+                            (else
+                             (prevent-default! e)
+                             (insert id 'z))))
                           ("y"
-                           (when (keyboard-event-ctrl-key? e)
+                           (cond
+                            ((keyboard-event-ctrl-key? e)
                              (prevent-default! e)
-                             (redo-tree! id)))
+                             (redo-tree! id))
+                            (else
+                             (prevent-default! e)
+                             (insert id 'y))))
                           ("Delete"
                            (if (keyboard-event-ctrl-key? e)
                                (forward-delete id (event-target e))
@@ -160,8 +172,8 @@
                                       (not (keyboard-event-ctrl-key? e))
                                       (not (keyboard-event-alt-key? e)))
                              (prevent-default! e)
-                             (insert id (string->symbol key))))))))
-         ,@contents))
+                             (insert id (string->sexp key))))))))
+         ,str))
 
 (define (element-inner-text/trimmed elem)
   (string-trim-both (element-inner-text elem)))
@@ -175,11 +187,12 @@
                ,(lambda (e)
                   ;; Move into contenteditable child node.
                   (define (jump-to-inner)
-                    (focus! (element-next-sibling
-                             (element-first-child
-                              (event-target e)))))
+                    (element-focus!
+                     (element-next-sibling
+                      (element-first-child
+                       (event-target e)))))
                   (stop-propagation! e)
-                  (match (pk 'key (keyboard-event-key e))
+                  (match (pk 'string-open-key (keyboard-event-key e))
                     ("ArrowLeft"
                      (if (keyboard-event-ctrl-key? e)
                          (jump-to-prev-sexp id)
@@ -202,7 +215,7 @@
                     ("\""
                      (prevent-default! e)
                      ;; Jump to closing delimiter.
-                     (focus!
+                     (element-focus!
                       (element-next-sibling
                        (element-next-sibling
                         (element-first-child
@@ -251,7 +264,7 @@
                                        (#\\ (values))
                                        (_
                                         (prevent-default! e)
-                                        (focus!
+                                        (element-focus!
                                          (element-next-sibling
                                           (event-target e)))))))))
                                (_ (values))))
@@ -284,7 +297,7 @@
                     (keydown
                      ,(lambda (e)
                         (stop-propagation! e)
-                        (match (pk 'key (keyboard-event-key e))
+                        (match (pk 'string-inner-key (keyboard-event-key e))
                           ("ArrowLeft"
                            (if (keyboard-event-ctrl-key? e)
                                (jump-to-prev-sexp id)
@@ -309,17 +322,6 @@
                            (when (keyboard-event-ctrl-key? e)
                              (prevent-default! e)
                              (redo-tree! id)))
-                          ;; ("Enter"
-                          ;;  (prevent-default! e)
-                          ;;  (focus!
-                          ;;   (get-element-by-id
-                          ;;    (exp-id (commit-or-delete id (event-target e))))))
-                          ;; ("Delete"
-                          ;;  (when (keyboard-event-ctrl-key? e)
-                          ;;    (forward-delete id (event-target e))))
-                          ;; ("Backspace"
-                          ;;  (when (keyboard-event-alt-key? e)
-                          ;;    (backward-delete id (event-target e))))
                           (_ (values))))))
                  ,value)
            (span (@ (class "editor-string-delimiter")
@@ -327,12 +329,12 @@
                     (keydown
                      ,(lambda (e)
                         (stop-propagation! e)
-                        (match (pk 'key (keyboard-event-key e))
+                        (match (pk 'string-close-key (keyboard-event-key e))
                           ("ArrowLeft"
                            (if (keyboard-event-ctrl-key? e)
                                (jump-to-prev-sexp id)
                                ;; Jump to opening delimiter.
-                               (focus! (element-parent (event-target e)))))
+                               (element-focus! (element-parent (event-target e)))))
                           ("ArrowRight"
                            (if (keyboard-event-ctrl-key? e)
                                (jump-to-next-sexp id)
@@ -381,11 +383,11 @@
                                       (not (keyboard-event-ctrl-key? e))
                                       (not (keyboard-event-alt-key? e)))
                              (prevent-default! e)
-                             (insert id (string->symbol key))))))))
+                             (insert id (string->sexp key))))))))
                  "\""))))
 
 ;; non-string atoms only
-(define (atom-node-shtml id value)
+(define (atom-node-shtml id value operator?)
   (let ((elem-id (exp-id id)))
     (define (empty? e)
       (string-null?
@@ -396,7 +398,7 @@
           (let* ((prev (tree-prev *tree* id))
                  (tree (tree-delete *tree* id)))
             (set-tree! tree)
-            (remove! (event-target e))
+            (element-remove! (event-target e))
             prev)
           id))
     (define (node-classes)
@@ -404,10 +406,8 @@
        "editor-node editor-atom "
        (match value
          ((? symbol?)
-          ;; TODO: Only highlight special forms
-          ;; that are at the head of a list.
-          (if (special-form? value)
-              "editor-special-form"
+          (if (and operator? (special-form-arguments value))
+              "editor-special"
               "editor-symbol"))
          ((? keyword?) "editor-keyword")
          ((? number?) "editor-number")
@@ -464,12 +464,12 @@
                     (unless (equal? value new)
                       (set! value new)
                       (set-tree! (tree-set-atom *tree* id new) #f)
-                      (set-attribute! (event-target e) "class"
-                                      (node-classes))))))
+                      (element-attribute-set! (event-target e) "class"
+                                              (node-classes))))))
               (keydown
                ,(lambda (e)
                   (stop-propagation! e)
-                  (match (pk 'key (keyboard-event-key e))
+                  (match (pk 'atom-key (keyboard-event-key e))
                     ("ArrowLeft"
                      (if (keyboard-event-ctrl-key? e)
                          (jump-to-prev-sexp id)
@@ -522,21 +522,21 @@
   (call-with-values (lambda () (tree-wrap *tree* id))
     (lambda (tree new)
       (set-tree! tree)
-      (focus! (element-for-id new)))))
+      (element-focus! (element-for-id new)))))
 
 (define (insert id init)
   (call-with-values (lambda () (tree-insert-atom *tree* id init))
     (lambda (tree new)
       (set-tree! tree)
       (let ((focus-elem (element-for-id new)))
-        (focus! focus-elem)
+        (element-focus! focus-elem)
         (set-selection-position! (selection) focus-elem 1)))))
 
 (define (open id elem)
   (call-with-values (lambda () (tree-open *tree* id))
     (lambda (tree new)
       (set-tree! tree)
-      (focus! (element-for-id new)))))
+      (element-focus! (element-for-id new)))))
 
 (define (jump-to-prev id)
   (focus-maybe (tree-prev *tree* id)))
@@ -553,19 +553,19 @@
 (define (jump-to-eol id)
   (match (tree-next-eol *tree* id)
     (#f (values))
-    (id (focus! (element-for-id id)))))
+    (id (element-focus! (element-for-id id)))))
 
 (define (forward-delete id elem)
   (call-with-values (lambda () (tree-forward-delete *tree* id))
     (lambda (tree focused)
       (set-tree! tree)
-      (focus! (element-for-id focused)))))
+      (element-focus! (element-for-id focused)))))
 
 (define (backward-delete id elem)
   (call-with-values (lambda () (tree-backward-delete *tree* id))
     (lambda (tree focused)
       (set-tree! tree)
-      (focus! (element-for-id focused)))))
+      (element-focus! (element-for-id focused)))))
 
 (define* (tree->shtml tree)
   (let lp ((id (tree-root tree))
@@ -582,6 +582,12 @@
              ((id . depth)
               (close-delimiter id depth)))
            closes))
+    (define (atom? id)
+      (atom-node? (tree-ref tree id)))
+    (define (symbol-atom? id)
+      (match (tree-ref tree id)
+        (($ <node:atom> _ (? symbol?)) #t)
+        (_ #f)))
     (match (tree-ref tree id)
       (($ <node:atom> _ (? string? value))
        (let ((atom (string-node-shtml id value)))
@@ -592,45 +598,121 @@
                     ,atom
                     ,@(close-delimiters)))))
       (($ <node:atom> _ value)
-       (let ((atom (atom-node-shtml id value)))
+       (let ((atom (atom-node-shtml id value (not (null? opens)))))
          (if (and (null? opens) (null? closes))
              atom
              `(span (@ (class "editor-group"))
                     ,@(open-delimiters)
                     ,atom
                     ,@(close-delimiters)))))
-      ;; TODO: To properly highlight parens, keep track of indentation
-      ;; level while rendering and add a CSS class for each unique
-      ;; color.
       (($ <node:compound> _ 'list children eol)
-       `(span (@ (class "editor-compound"))
-              ,@(match children
-                  (()
-                   `((span (@ (class "editor-group"))
-                           ,@(open-delimiters)
-                           ,(open-delimiter id depth)
-                           ,(close-delimiter eol depth)
-                           ,@(close-delimiters))))
-                  ((child)
-                   `(,(lp child (1+ depth)
-                          (cons (cons id depth) opens)
-                          (cons (cons eol depth) closes))))
-                  ((first . rest)
-                   `(,(lp first (1+ depth) (cons (cons id depth) opens) '())
-                     (span (@ (class "editor-arguments"))
-                           ,@(let lp2 ((rest rest))
-                               (match rest
-                                 ((last)
-                                  (list (lp last (1+ depth) '()
-                                            (cons (cons eol depth) closes))))
-                                 ((middle . rest)
-                                  ;; We use whitespace here for the sake of copying
-                                  ;; code as plain text out of the browser.
-                                  (cons* " "
-                                         (lp middle (1+ depth) '() '())
-                                         (lp2 rest))))))))))))))
+       (match children
+         ;; Some special cases for lists of length 0 or 1.
+         (()
+          `(span (@ (class "editor-list"))
+                 (span (@ (class "editor-group"))
+                       ,@(open-delimiters)
+                       ,(open-delimiter id depth)
+                       ,(close-delimiter eol depth)
+                       ,@(close-delimiters))))
+         ((child)
+          `(span (@ (class "editor-list"))
+                 ,(lp child (1+ depth)
+                      (cons (cons id depth) opens)
+                      (cons (cons eol depth) closes))))
+         ;; Lists of 2+ items are more complicated.
+         ((first . rest)
+          ;; Split into arguments and body expressions so we can style
+          ;; each properly to achieve the conventional Lisp code
+          ;; aesthetic.  Special forms will have 0 or more arguments
+          ;; and then everything else is in the body.  Standard forms
+          ;; will just have arguments.
+          (define (num-args id)
+            (match (tree-ref tree first)
+              (($ <node:atom> _ (? symbol? sym))
+               (special-form-arguments sym))
+              (_ #f)))
+          (call-with-values (lambda ()
+                              (match (num-args first)
+                                (#f (values #f rest '()))
+                                (#t (values #t rest '()))
+                                (nargs
+                                 (call-with-values (lambda () (split-at rest nargs))
+                                   (lambda (args body)
+                                     (values #t args body))))))
+            (lambda (special? args body)
+              (if (null? body)
+                  (if (symbol-atom? first)
+                      ;; Lists that with a symbol get standard
+                      ;; procedure call styling where the arguments
+                      ;; are aligned to the right of the operator.
+                      `(span (@ (class "editor-call"))
+                             ,(lp first (1+ depth) (cons (cons id depth) opens) '())
+                             ,@(if (null? args)
+                                   '()
+                                   `((span (@ (class "editor-arguments"))
+                                           ,@(let lp2 ((args args))
+                                               (match args
+                                                 ((last)
+                                                  (list (lp last (1+ depth) '()
+                                                            (cons (cons eol depth) closes))))
+                                                 ((middle . args)
+                                                  ;; We use whitespace here for the sake of copying
+                                                  ;; code as plain text out of the browser.
+                                                  (cons* " "
+                                                         (lp middle (1+ depth) '() '())
+                                                         (lp2 args)))))))))
+                      ;; Lists that don't start with a symbol have their own style.
+                      `(span (@ (class "editor-list"))
+                             ,(lp first (1+ depth) (cons (cons id depth) opens) '())
+                             ,@(let lp2 ((args args))
+                                 (match args
+                                   (() '())
+                                   ((last)
+                                    (list (lp last (1+ depth) '()
+                                              (cons (cons eol depth) closes))))
+                                   ((middle . args)
+                                    ;; We use whitespace here for the sake of copying
+                                    ;; code as plain text out of the browser.
+                                    (cons* " "
+                                           (lp middle (1+ depth) '() '())
+                                           (lp2 args)))))))
+                  ;; Special forms have arguments and a body, each
+                  ;; styled differently.
+                  `(span (@ (class "editor-special-form"))
+                         (span (@ (class "editor-call"))
+                               ,(lp first (1+ depth) (cons (cons id depth) opens) '())
+                               ,@(if (null? args)
+                                     '()
+                                     `((span (@ (class "editor-arguments"))
+                                             ,@(let lp2 ((args args))
+                                                 (match args
+                                                   ((last)
+                                                    (list (lp last (1+ depth) '()
+                                                              (if (null? body)
+                                                                  (cons (cons eol depth) closes)
+                                                                  '()))))
+                                                   ((middle . args)
+                                                    ;; We use whitespace here for the sake of copying
+                                                    ;; code as plain text out of the browser.
+                                                    (cons* " "
+                                                           (lp middle (1+ depth) '() '())
+                                                           (lp2 args)))))))))
+                         (span (@ (class "editor-break"))) ; force a row break
+                         (span (@ (class "editor-body"))
+                               ,@(let lp2 ((body body))
+                                   (match body
+                                     ((last)
+                                      (list (lp last (1+ depth) '()
+                                                (cons (cons eol depth) closes))))
+                                     ((middle . body)
+                                      ;; We use whitespace here for the sake of copying
+                                      ;; code as plain text out of the browser.
+                                      (cons* " "
+                                             (lp middle (1+ depth) '() '())
+                                             (lp2 body))))))))))))))))
 
-(append-child!
+(element-append-child!
  (document-body)
  (shtml->dom
   `(article

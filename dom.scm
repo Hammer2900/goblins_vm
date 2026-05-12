@@ -12,15 +12,15 @@
             element-first-child
             element-last-child
             element-next-sibling
-            append-child!
-            remove!
-            replace-with!
+            element-append-child!
+            element-remove!
+            element-replace-with!
             element-value
             set-element-value!
             element-inner-text
-            set-attribute!
-            remove-attribute!
-            focus!
+            element-attribute-set!
+            element-attribute-remove!
+            element-focus!
 
             add-event-listener!
             remove-event-listener!
@@ -93,13 +93,13 @@
 (define-foreign element-next-sibling
   "element" "nextSibling"
   (ref extern) -> (ref null extern))
-(define-foreign append-child!
+(define-foreign element-append-child!
   "element" "appendChild"
   (ref extern) (ref extern) -> (ref extern))
-(define-foreign remove!
+(define-foreign element-remove!
   "element" "remove"
   (ref extern) -> none)
-(define-foreign replace-with!
+(define-foreign element-replace-with!
   "element" "replaceWith"
   (ref extern) (ref extern) -> none)
 (define-foreign element-value
@@ -111,13 +111,13 @@
 (define-foreign element-inner-text
   "element" "innerText"
   (ref extern) -> (ref string))
-(define-foreign set-attribute!
+(define-foreign element-attribute-set!
   "element" "setAttribute"
   (ref extern) (ref string) (ref string) -> none)
-(define-foreign remove-attribute!
+(define-foreign element-attribute-remove!
   "element" "removeAttribute"
   (ref extern) (ref string) -> none)
-(define-foreign focus!
+(define-foreign element-focus!
   "element" "focus"
   (ref extern) -> none)
 
@@ -227,7 +227,7 @@
          ;; Recursively call shtml->dom for each child node and
          ;; append it to elem.
          (for-each (lambda (child)
-                     (append-child! elem (shtml->dom child)))
+                     (element-append-child! elem (shtml->dom child)))
                    children))
        (match body
          ;; '@' denotes an attribute list.  Child nodes follow.
@@ -237,9 +237,9 @@
                       (match attr
                         ;; Attributes are (symbol string) tuples.
                         (((? symbol? name) (? string? val))
-                         (set-attribute! elem
-                                         (symbol->string name)
-                                         val))
+                         (element-attribute-set! elem
+                                                 (symbol->string name)
+                                                 val))
                         (((? symbol? name) (? procedure? proc))
                          (let ((name* (symbol->string name)))
                            (add-event-listener!/wrap elem name* proc)))))
@@ -276,7 +276,7 @@
               (#f
                (match val
                  ((? string?)
-                  (set-attribute! node name-str val))
+                  (element-attribute-set! node name-str val))
                  ((? procedure?)
                   (add-event-listener!/wrap node name-str val))))
               ;; Replace old attr or listener with new.
@@ -284,7 +284,7 @@
                (match val
                  ((? string?)
                   (unless (equal? old-val val)
-                    (set-attribute! node name-str val)))
+                    (element-attribute-set! node name-str val)))
                  ((? procedure?)
                   (unless (eq? old-val val)
                     (remove-event-listener!/wrap node name-str old-val)
@@ -300,7 +300,7 @@
               (#f
                (match val
                  ((? string?)
-                  (remove-attribute! node name-str))
+                  (element-attribute-remove! node name-str))
                  ((? procedure?)
                   (remove-event-listener!/wrap node name-str val))))
               (_ #t))))))
@@ -309,11 +309,11 @@
   (define (remove-tail node)
     (unless (external-null? node)
       (let ((next (element-next-sibling node)))
-        (remove! node)
+        (element-remove! node)
         (remove-tail next))))
   (define (render-and-replace node shtml)
     (let ((node* (shtml->dom shtml)))
-      (replace-with! node node*)
+      (element-replace-with! node node*)
       node*))
   (let lp ((node (element-first-child root))
            (parent root)
@@ -326,7 +326,7 @@
        ;; necessary.
        (let ((node* (shtml->dom new)))
          (remove-tail node)
-         (append-child! parent node*)
+         (element-append-child! parent node*)
          node*))
       ;; Replace text nodes with either a new text node if the text
       ;; has changed, or an element subtree if the text has been
@@ -382,7 +382,7 @@
                        ;; new list are fresh elements that need to be
                        ;; added.
                        (for-each (lambda (new)
-                                   (append-child! parent (shtml->dom new)))
+                                   (element-append-child! parent (shtml->dom new)))
                                  new))
                       ((old-child . old-rest)
                        (match new
@@ -402,5 +402,5 @@
                ;; replace the entire element subtree.
                (else
                 (let ((node* (shtml->dom new)))
-                  (replace-with! node node*)
+                  (element-replace-with! node node*)
                   node*)))))))))))

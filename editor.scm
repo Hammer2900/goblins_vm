@@ -7,7 +7,7 @@
   #:use-module (srfi srfi-9)
   #:export (<node:atom>
             make-atom-node
-            node-atom?
+            atom-node?
             atom-node-parent
             atom-node-ref
 
