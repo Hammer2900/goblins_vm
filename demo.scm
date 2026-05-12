@@ -3,7 +3,8 @@
              (fibers scheduler)
              (hoot ffi)
              (ice-9 match)
-             (srfi srfi-1))
+             (srfi srfi-1)
+             (srfi srfi-11))
 
 ;; Global state (ew!)
 (define *tree* (make-empty-tree))
@@ -582,12 +583,17 @@
              ((id . depth)
               (close-delimiter id depth)))
            closes))
-    (define (atom? id)
-      (atom-node? (tree-ref tree id)))
-    (define (symbol-atom? id)
-      (match (tree-ref tree id)
-        (($ <node:atom> _ (? symbol?)) #t)
-        (_ #f)))
+    (define (render-args args closes)
+      (match args
+        (() '())
+        ((last)
+         (list (lp last (1+ depth) '() closes)))
+        ((middle . args)
+         ;; We use whitespace here for the sake of copying
+         ;; code as plain text out of the browser.
+         (cons* " "
+                (lp middle (1+ depth) '() '())
+                (render-args args closes)))))
     (match (tree-ref tree id)
       (($ <node:atom> _ (? string? value))
        (let ((atom (string-node-shtml id value)))
@@ -607,7 +613,8 @@
                     ,@(close-delimiters)))))
       (($ <node:compound> _ 'list children eol)
        (match children
-         ;; Some special cases for lists of length 0 or 1.
+         ;; Some special cases for lists of length 0 or 1.  We want to
+         ;; make sure all the parentheses stay "glued" together.
          (()
           `(span (@ (class "editor-list"))
                  (span (@ (class "editor-group"))
@@ -618,8 +625,8 @@
          ((child)
           `(span (@ (class "editor-list"))
                  ,(lp child (1+ depth)
-                      (cons (cons id depth) opens)
-                      (cons (cons eol depth) closes))))
+                      (alist-cons id depth opens)
+                      (alist-cons eol depth closes))))
          ;; Lists of 2+ items are more complicated.
          ((first . rest)
           ;; Split into arguments and body expressions so we can style
@@ -627,90 +634,45 @@
           ;; aesthetic.  Special forms will have 0 or more arguments
           ;; and then everything else is in the body.  Standard forms
           ;; will just have arguments.
-          (define (num-args id)
-            (match (tree-ref tree first)
-              (($ <node:atom> _ (? symbol? sym))
-               (special-form-arguments sym))
-              (_ #f)))
-          (call-with-values (lambda ()
-                              (match (num-args first)
-                                (#f (values #f rest '()))
-                                (#t (values #t rest '()))
-                                (nargs
-                                 (call-with-values (lambda () (split-at rest nargs))
-                                   (lambda (args body)
-                                     (values #t args body))))))
-            (lambda (special? args body)
-              (if (null? body)
-                  (if (symbol-atom? first)
-                      ;; Lists that with a symbol get standard
-                      ;; procedure call styling where the arguments
-                      ;; are aligned to the right of the operator.
-                      `(span (@ (class "editor-call"))
-                             ,(lp first (1+ depth) (cons (cons id depth) opens) '())
-                             ,@(if (null? args)
-                                   '()
-                                   `((span (@ (class "editor-arguments"))
-                                           ,@(let lp2 ((args args))
-                                               (match args
-                                                 ((last)
-                                                  (list (lp last (1+ depth) '()
-                                                            (cons (cons eol depth) closes))))
-                                                 ((middle . args)
-                                                  ;; We use whitespace here for the sake of copying
-                                                  ;; code as plain text out of the browser.
-                                                  (cons* " "
-                                                         (lp middle (1+ depth) '() '())
-                                                         (lp2 args)))))))))
-                      ;; Lists that don't start with a symbol have their own style.
-                      `(span (@ (class "editor-list"))
-                             ,(lp first (1+ depth) (cons (cons id depth) opens) '())
-                             ,@(let lp2 ((args args))
-                                 (match args
-                                   (() '())
-                                   ((last)
-                                    (list (lp last (1+ depth) '()
-                                              (cons (cons eol depth) closes))))
-                                   ((middle . args)
-                                    ;; We use whitespace here for the sake of copying
-                                    ;; code as plain text out of the browser.
-                                    (cons* " "
-                                           (lp middle (1+ depth) '() '())
-                                           (lp2 args)))))))
-                  ;; Special forms have arguments and a body, each
-                  ;; styled differently.
-                  `(span (@ (class "editor-special-form"))
-                         (span (@ (class "editor-call"))
-                               ,(lp first (1+ depth) (cons (cons id depth) opens) '())
-                               ,@(if (null? args)
-                                     '()
-                                     `((span (@ (class "editor-arguments"))
-                                             ,@(let lp2 ((args args))
-                                                 (match args
-                                                   ((last)
-                                                    (list (lp last (1+ depth) '()
-                                                              (if (null? body)
-                                                                  (cons (cons eol depth) closes)
-                                                                  '()))))
-                                                   ((middle . args)
-                                                    ;; We use whitespace here for the sake of copying
-                                                    ;; code as plain text out of the browser.
-                                                    (cons* " "
-                                                           (lp middle (1+ depth) '() '())
-                                                           (lp2 args)))))))))
-                         (span (@ (class "editor-break"))) ; force a row break
-                         (span (@ (class "editor-body"))
-                               ,@(let lp2 ((body body))
-                                   (match body
-                                     ((last)
-                                      (list (lp last (1+ depth) '()
-                                                (cons (cons eol depth) closes))))
-                                     ((middle . body)
-                                      ;; We use whitespace here for the sake of copying
-                                      ;; code as plain text out of the browser.
-                                      (cons* " "
-                                             (lp middle (1+ depth) '() '())
-                                             (lp2 body))))))))))))))))
+          (let-values (((symbolic? args body)
+                        (match (tree-ref tree first)
+                          (($ <node:atom> _ (? symbol? sym))
+                           (match (special-form-arguments sym)
+                             ((or #t #f)
+                              (values #t rest '()))
+                             (nargs
+                              (let-values (((args body) (split-at rest nargs)))
+                                (values #t args body)))))
+                          (_ (values #f rest '())))))
+            (match body
+              (()
+               (if symbolic?
+                   ;; Lists that start with a symbol get standard
+                   ;; procedure call styling where the arguments are
+                   ;; aligned to the right of the operator.
+                   `(span (@ (class "editor-call"))
+                          ,(lp first (1+ depth) (alist-cons id depth opens) '())
+                          ,@(render-args args (alist-cons eol depth closes)))
+                   ;; Lists that don't start with a symbol have a
+                   ;; slightly different style where the arguments are
+                   ;; aligned to the right of the opening parenthesis.
+                   `(span (@ (class "editor-list"))
+                          ,(lp first (1+ depth) (alist-cons id depth opens) '())
+                          ,@(render-args args (alist-cons eol depth closes)))))
+              (_
+               ;; Special forms have arguments and a body, each
+               ;; indented differently.
+               `(span (@ (class "editor-special-form"))
+                      (span (@ (class "editor-call"))
+                            ,(lp first (1+ depth) (alist-cons id depth opens) '())
+                            ,@(match args
+                                (() '())
+                                (_
+                                 `((span (@ (class "editor-arguments"))
+                                         ,@(render-args args '()))))))
+                      (span (@ (class "editor-break"))) ; force a row break
+                      (span (@ (class "editor-body"))
+                            ,@(render-args body (alist-cons eol depth closes)))))))))))))
 
 (element-append-child!
  (document-body)

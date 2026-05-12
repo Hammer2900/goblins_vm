@@ -8,7 +8,7 @@ body {
     display: flex;
     font-family: monospace, "Inconsolata";
     font-size: 2em;
-    max-width: 50vw;
+    max-width: 75vw;
     padding: 1rem;
     border: 1px solid;
     caret-color: #272a32;
@@ -39,8 +39,8 @@ body {
     flex-wrap: wrap;
 }
 
-.editor-arguments > *,
-.editor-list > :not(:first-child) {
+.editor-list > :not(:first-child),
+.editor-call > :not(:first-child) {
     margin-left: 1ch;
 }
 
