@@ -40,7 +40,7 @@ body {
 }
 
 .editor-list > :not(:first-child),
-.editor-call > :not(:first-child) {
+.editor-arguments > * {
     margin-left: 1ch;
 }
 

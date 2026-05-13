@@ -652,7 +652,8 @@
                    ;; aligned to the right of the operator.
                    `(span (@ (class "editor-call"))
                           ,(lp first (1+ depth) (alist-cons id depth opens) '())
-                          ,@(render-args args (alist-cons eol depth closes)))
+                          (span (@ (class "editor-arguments"))
+                                ,@(render-args args (alist-cons eol depth closes))))
                    ;; Lists that don't start with a symbol have a
                    ;; slightly different style where the arguments are
                    ;; aligned to the right of the opening parenthesis.
