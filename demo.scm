@@ -181,68 +181,70 @@
 
 (define (string-node-shtml id value)
   (let ((elem-id (exp-id id)))
-    `(span (@ (id ,elem-id)
-              (class "editor-node editor-string")
-              (tabindex "0")
-              (keydown
-               ,(lambda (e)
-                  ;; Move into contenteditable child node.
-                  (define (jump-to-inner)
-                    (element-focus!
-                     (element-next-sibling
-                      (element-first-child
-                       (event-target e)))))
-                  (stop-propagation! e)
-                  (match (pk 'string-open-key (keyboard-event-key e))
-                    ("ArrowLeft"
-                     (if (keyboard-event-ctrl-key? e)
-                         (jump-to-prev-sexp id)
-                         (jump-to-prev id)))
-                    ("ArrowRight"
-                     (if (keyboard-event-ctrl-key? e)
-                         (jump-to-next-sexp id)
-                         (jump-to-inner)))
-                    ("ArrowUp"
-                     (jump-to-prev-sexp id))
-                    ("ArrowDown"
-                     (jump-to-next-sexp id))
-                    ("("
-                     (let ((elem (event-target e)))
-                       (if (keyboard-event-alt-key? e)
-                           (wrap id elem)
-                           (open id elem))))
-                    (")"
-                     (jump-to-eol id))
-                    ("\""
-                     (prevent-default! e)
-                     ;; Jump to closing delimiter.
-                     (element-focus!
-                      (element-next-sibling
-                       (element-next-sibling
-                        (element-first-child
-                         (event-target e))))))
-                    ("z"
-                     (when (keyboard-event-ctrl-key? e)
-                       (prevent-default! e)
-                       (undo-tree! id)))
-                    ("y"
-                     (when (keyboard-event-ctrl-key? e)
-                       (prevent-default! e)
-                       (redo-tree! id)))
-                    ("Delete"
-                     (if (keyboard-event-ctrl-key? e)
-                         (forward-delete id (event-target e))
-                         (jump-to-inner)))
-                    ("Backspace"
-                     (when (keyboard-event-ctrl-key? e)
-                       (backward-delete id (event-target e))
-                       (jump-to-prev id)))
-                    (key
-                     (when (and (= (string-length key) 1)
-                                (not (keyboard-event-ctrl-key? e))
-                                (not (keyboard-event-alt-key? e)))
-                       (jump-to-inner)))))))
-           (span (@ (class "editor-string-delimiter")) "\"")
+    `(span (@ (class "editor-node editor-string"))
+           (span (@ (id ,elem-id)
+                    (class "editor-string-delimiter")
+                    (tabindex "0")
+                    (keydown
+                     ,(lambda (e)
+                        ;; Move into contenteditable node.
+                        (define (jump-to-inner)
+                          (let ((elem (element-next-sibling
+                                       (event-target e))))
+                            (element-focus! elem)
+                            (set-selection-base-and-extent!
+                             (selection) elem 0 elem 0)))
+                        (stop-propagation! e)
+                        (match (pk 'string-open-key (keyboard-event-key e))
+                          ("ArrowLeft"
+                           (prevent-default! e)
+                           (if (keyboard-event-ctrl-key? e)
+                               (jump-to-prev-sexp id)
+                               (jump-to-prev id)))
+                          ("ArrowRight"
+                           (prevent-default! e)
+                           (if (keyboard-event-ctrl-key? e)
+                               (jump-to-next-sexp id)
+                               (jump-to-inner)))
+                          ("ArrowUp"
+                           (jump-to-prev-sexp id))
+                          ("ArrowDown"
+                           (jump-to-next-sexp id))
+                          ("("
+                           (let ((elem (event-target e)))
+                             (if (keyboard-event-alt-key? e)
+                                 (wrap id elem)
+                                 (open id elem))))
+                          (")"
+                           (jump-to-eol id))
+                          ("\""
+                           (prevent-default! e)
+                           ;; Jump to closing delimiter.
+                           (element-focus!
+                            (element-next-sibling
+                             (event-target e))))
+                          ("z"
+                           (when (keyboard-event-ctrl-key? e)
+                             (prevent-default! e)
+                             (undo-tree! id)))
+                          ("y"
+                           (when (keyboard-event-ctrl-key? e)
+                             (prevent-default! e)
+                             (redo-tree! id)))
+                          ("Delete"
+                           (if (keyboard-event-ctrl-key? e)
+                               (forward-delete id (event-target e))
+                               (jump-to-inner)))
+                          ("Backspace"
+                           (when (keyboard-event-ctrl-key? e)
+                             (backward-delete id (event-target e))
+                             (jump-to-prev id)))
+                          (key
+                           (when (and (= (string-length key) 1)
+                                      (not (keyboard-event-ctrl-key? e))
+                                      (not (keyboard-event-alt-key? e)))
+                             (jump-to-inner)))))))
+                 "\"")
            (span (@ (class "editor-string-inner")
                     (tabindex "0")
                     (contenteditable "plaintext-only")
@@ -302,15 +304,26 @@
                           ("ArrowLeft"
                            (if (keyboard-event-ctrl-key? e)
                                (jump-to-prev-sexp id)
-                               ;; TODO: Jump to previous node if
-                               ;; caret is at first char.
-                               #f))
+                               (let ((s (selection))
+                                     (target (event-target e)))
+                                 (when (and (selection-collapsed? s)
+                                            (zero? (selection-focus-offset s)))
+                                   (pk 'string-inner-prev)
+                                   (prevent-default! e)
+                                   (element-focus!
+                                    (element-previous-sibling (event-current-target e)))))))
                           ("ArrowRight"
                            (if (keyboard-event-ctrl-key? e)
                                (jump-to-next-sexp id)
-                               ;; TODO: Jump to next node if caret
-                               ;; is at last char.
-                               #f))
+                               (let ((s (selection))
+                                     (target (event-target e)))
+                                 (when (and (selection-collapsed? s)
+                                            (= (selection-focus-offset s)
+                                               (string-length
+                                                (element-inner-text target))))
+                                   (prevent-default! e)
+                                   (element-focus!
+                                    (element-next-sibling target))))))
                           ("ArrowUp"
                            (jump-to-prev-sexp id))
                           ("ArrowDown"
@@ -329,14 +342,21 @@
                     (tabindex "0")
                     (keydown
                      ,(lambda (e)
+                        (define (jump-to-inner)
+                          (let ((elem (element-previous-sibling
+                                       (event-target e))))
+                            (element-focus! elem)
+                            (set-selection-base-and-extent!
+                             (selection) elem 1 elem 1)))
                         (stop-propagation! e)
                         (match (pk 'string-close-key (keyboard-event-key e))
                           ("ArrowLeft"
+                           (prevent-default! e)
                            (if (keyboard-event-ctrl-key? e)
                                (jump-to-prev-sexp id)
-                               ;; Jump to opening delimiter.
-                               (element-focus! (element-parent (event-target e)))))
+                               (jump-to-inner)))
                           ("ArrowRight"
+                           (prevent-default! e)
                            (if (keyboard-event-ctrl-key? e)
                                (jump-to-next-sexp id)
                                (jump-to-next id)))
@@ -474,15 +494,22 @@
                     ("ArrowLeft"
                      (if (keyboard-event-ctrl-key? e)
                          (jump-to-prev-sexp id)
-                         ;; TODO: Jump to previous node if
-                         ;; caret is at first char.
-                         #f))
+                         (let ((s (selection)))
+                           (when (and (selection-collapsed? s)
+                                      (zero? (selection-focus-offset s)))
+                             (prevent-default! e)
+                             (jump-to-prev id)))))
                     ("ArrowRight"
                      (if (keyboard-event-ctrl-key? e)
                          (jump-to-next-sexp id)
-                         ;; TODO: Jump to next node if caret
-                         ;; is at last char.
-                         #f))
+                         (let ((s (selection)))
+                           (when (and (selection-collapsed? s)
+                                      (= (selection-focus-offset s)
+                                         (string-length
+                                          (element-inner-text
+                                           (event-target e)))))
+                             (prevent-default! e)
+                             (jump-to-next id)))))
                     ("ArrowUp"
                      (let ((pos (delete-maybe e)))
                        (jump-to-prev-sexp pos)))
@@ -540,7 +567,18 @@
       (element-focus! (element-for-id new)))))
 
 (define (jump-to-prev id)
-  (focus-maybe (tree-prev *tree* id)))
+  (match (tree-prev *tree* id)
+    (#f (values))
+    (prev
+     (let ((elem (element-for-id prev)))
+       (match (tree-ref *tree* prev)
+         ;; Move to the closing quote of a string node.
+         (($ <node:atom> _ (? string?))
+          (element-focus!
+           (element-next-sibling
+            (element-next-sibling elem))))
+         ;; TODO: Move to the closing paren of a compound node.
+         (_ (element-focus! elem)))))))
 
 (define (jump-to-next id)
   (focus-maybe (tree-next *tree* id)))

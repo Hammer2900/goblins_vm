@@ -70,7 +70,6 @@ body {
 }
 .editor-atom:focus,
 .editor-delimiter:focus,
-.editor-string:focus > :first-child,
 .editor-string-delimiter:focus,
 .editor-string-inner:focus {
     background: #4ec8ff;

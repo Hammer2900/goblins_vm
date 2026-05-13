@@ -12,6 +12,7 @@
             element-first-child
             element-last-child
             element-next-sibling
+            element-previous-sibling
             element-append-child!
             element-remove!
             element-replace-with!
@@ -43,6 +44,10 @@
             range-end-offset
 
             selection
+            selection-anchor-node
+            selection-anchor-offset
+            selection-focus-node
+            selection-focus-offset
             selection-collapsed?
             selection-collapse!
             set-selection-base-and-extent!
@@ -92,6 +97,9 @@
   (ref extern) -> (ref null extern))
 (define-foreign element-next-sibling
   "element" "nextSibling"
+  (ref extern) -> (ref null extern))
+(define-foreign element-previous-sibling
+  "element" "previousSibling"
   (ref extern) -> (ref null extern))
 (define-foreign element-append-child!
   "element" "appendChild"
@@ -179,6 +187,18 @@
   "range" "endOffset"
   (ref extern) -> i32)
 
+(define-foreign selection-anchor-node
+  "selection" "anchorNode"
+  (ref extern) -> (ref null extern))
+(define-foreign selection-anchor-offset
+  "selection" "anchorOffset"
+  (ref extern) -> i32)
+(define-foreign selection-focus-node
+  "selection" "focusNode"
+  (ref extern) -> (ref null extern))
+(define-foreign selection-focus-offset
+  "selection" "focusOffset"
+  (ref extern) -> i32)
 (define-foreign %selection-collapsed?
   "selection" "isCollapsed"
   (ref extern) -> i32)

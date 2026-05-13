@@ -19,6 +19,7 @@ async function load() {
         firstChild: (elem) => elem.firstChild,
         lastChild: (elem) => elem.lastChild,
         nextSibling: (elem) => elem.nextSibling,
+        previousSibling: (elem) => elem.previousSibling,
         value(elem) { return elem.value; },
         setValue(elem, value) { elem.value = value; },
         innerText: (elem) => elem.innerText,
@@ -50,6 +51,10 @@ async function load() {
         endOffset: (r) => r.endOffset
       },
       selection: {
+        anchorNode: (s) => s.anchorNode,
+        anchorOffset: (s) => s.anchorOffset,
+        focusNode: (s) => s.focusNode,
+        focusOffset: (s) => s.focusOffset,
         isCollapsed: (s) => s.isCollapsed,
         collapse: (s, node, offset) => s.collapse(node, offset),
         setBaseAndExtent: (s, an, ao, fn, fo) => s.setBaseAndExtent(an, ao, fn, fo),
