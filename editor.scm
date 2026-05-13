@@ -8,6 +8,7 @@
   #:export (<node:atom>
             make-atom-node
             atom-node?
+            string-node?
             atom-node-parent
             atom-node-ref
 
@@ -83,6 +84,11 @@
   (type compound-node-type)
   (children compound-node-children)
   (eol compound-node-eol))
+
+(define (string-node? obj)
+  (match obj
+    (($ <node:atom> _ (? string?)) #t)
+    (_ #f)))
 
 (define (node-parent node)
   (match node

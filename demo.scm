@@ -116,10 +116,12 @@
                         (stop-propagation! e)
                         (match (pk 'paren-key (keyboard-event-key e))
                           ("ArrowLeft"
+                           (prevent-default! e)
                            (if (keyboard-event-ctrl-key? e)
                                (jump-to-prev-sexp id)
                                (jump-to-prev id)))
                           ("ArrowRight"
+                           (prevent-default! e)
                            (if (keyboard-event-ctrl-key? e)
                                (jump-to-next-sexp id)
                                (jump-to-next id)))
@@ -224,13 +226,19 @@
                             (element-next-sibling
                              (event-target e))))
                           ("z"
-                           (when (keyboard-event-ctrl-key? e)
+                           (cond
+                            ((keyboard-event-ctrl-key? e)
                              (prevent-default! e)
-                             (undo-tree! id)))
+                             (undo-tree! id))
+                            (else
+                             (jump-to-inner))))
                           ("y"
-                           (when (keyboard-event-ctrl-key? e)
+                           (cond
+                            ((keyboard-event-ctrl-key? e)
                              (prevent-default! e)
-                             (redo-tree! id)))
+                             (redo-tree! id))
+                            (else
+                             (jump-to-inner))))
                           ("Delete"
                            (if (keyboard-event-ctrl-key? e)
                                (forward-delete id (event-target e))
@@ -378,13 +386,21 @@
                            (prevent-default! e)
                            (insert id ""))
                           ("z"
-                           (when (keyboard-event-ctrl-key? e)
+                           (cond
+                            ((keyboard-event-ctrl-key? e)
                              (prevent-default! e)
-                             (undo-tree! id)))
+                             (undo-tree! id))
+                            (else
+                             (prevent-default! e)
+                             (insert id 'z))))
                           ("y"
-                           (when (keyboard-event-ctrl-key? e)
+                           (cond
+                            ((keyboard-event-ctrl-key? e)
                              (prevent-default! e)
-                             (redo-tree! id)))
+                             (redo-tree! id))
+                            (else
+                             (prevent-default! e)
+                             (insert id 'y))))
                           ("Delete"
                            (cond
                             ((keyboard-event-ctrl-key? e)
@@ -572,12 +588,17 @@
     (prev
      (let ((elem (element-for-id prev)))
        (match (tree-ref *tree* prev)
-         ;; Move to the closing quote of a string node.
-         (($ <node:atom> _ (? string?))
+         ;; Move to the closing quote of a string atom node.
+         ((? string-node?)
           (element-focus!
            (element-next-sibling
             (element-next-sibling elem))))
-         ;; TODO: Move to the closing paren of a compound node.
+         ;; Move to the last character of a non-string atom node.
+         ((? atom-node?)
+          (element-focus! elem)
+          (set-selection-base-and-extent!
+           (selection) elem 1 elem 1))
+         ;; Move to the end of a compound node.
          (_ (element-focus! elem)))))))
 
 (define (jump-to-next id)
