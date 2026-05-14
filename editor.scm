@@ -53,6 +53,7 @@
             tree-delete
             tree-forward-delete
             tree-backward-delete
+            tree-node-empty?
             tree->sexp
             sexp->tree))
 
@@ -510,7 +511,6 @@
               ;; TODO: Handle deletion of root node.
               (error "deletion of root node unimplemented"))))))))
 
-;; TODO: Recursively remove deleted subtrees.
 (define (tree-backward-delete tree id)
   (match tree
     (($ <tree> root nodes)
@@ -546,3 +546,11 @@
                           (if (eqv? child id)
                               (values (tree-delete tree prev) id)
                               (lp tail child)))))))))))))))
+
+(define (tree-node-empty? tree id)
+  (match (tree-ref tree id)
+    ((? compound-node? node)
+     (null? (compound-node-children node)))
+    ((? eol-node? node)
+     (tree-node-empty? tree (eol-node-parent node)))
+    (_ #f)))

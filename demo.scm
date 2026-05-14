@@ -98,21 +98,13 @@
 (define (highlight-class i)
   (string-append "editor-highlight-" (number->string (modulo i 6))))
 
-(define* (open-delimiter id depth #:optional (str "("))
-  (paren-node-shtml id
-                    (string-append "editor-delimiter editor-delimiter-open "
-                                   (highlight-class depth))
-                    str))
-
-(define* (close-delimiter id depth #:optional (str ")"))
-  (paren-node-shtml id
-                    (string-append "editor-delimiter editor-delimiter-close "
-                                   (highlight-class depth))
-                    str))
-
-(define (paren-node-shtml id class str)
+(define (paren-node-shtml id type depth)
   `(span (@ (id ,(exp-id id))
-            (class ,(string-append "editor-node " class))
+            (class ,(string-append "editor-node editor-delimiter "
+                                   (if (eq? type 'open)
+                                       "editor-delimiter-open "
+                                       "editor-delimiter-close ")
+                                   (highlight-class depth)))
             (tabindex "0")
             (click ,(lambda (e) (element-focus! (event-target e))))
             (paste ,(lambda (e) (paste (clipboard-text) id 0)))
@@ -165,13 +157,21 @@
                              (prevent-default! e)
                              (insert id 'y))))
                           ("Delete"
+                           (prevent-default! e)
                            (if (keyboard-event-ctrl-key? e)
-                               (forward-delete id (event-target e))
-                               (jump-to-next id)))
+                               (forward-delete id)
+                               (if (and (eq? type 'close)
+                                        (tree-node-empty? *tree* id))
+                                   (forward-delete id)
+                                   (jump-to-next id))))
                           ("Backspace"
+                           (prevent-default! e)
                            (if (keyboard-event-ctrl-key? e)
-                               (backward-delete id (event-target e))
-                               (jump-to-prev id)))
+                               (backward-delete id)
+                               (if (and (eq? type 'close)
+                                        (tree-node-empty? *tree* id))
+                                   (backward-delete id)
+                                   (jump-to-prev id))))
                           ((or "Ctrl" "Alt" "Shift")
                            (values))
                           (key
@@ -180,7 +180,7 @@
                                       (not (keyboard-event-alt-key? e)))
                              (prevent-default! e)
                              (insert id (string->sexp key))))))))
-         ,str))
+         ,(if (eq? type 'open) "(" ")")))
 
 (define (quote-node-shtml id type)
   `(span (@ (id ,(exp-id id))
@@ -242,11 +242,11 @@
                              (insert (tree-next-eol *tree* id) 'y))))
                           ("Delete"
                            (if (keyboard-event-ctrl-key? e)
-                               (forward-delete id (event-target e))
+                               (forward-delete id)
                                (jump-to-next id)))
                           ("Backspace"
                            (if (keyboard-event-ctrl-key? e)
-                               (backward-delete id (event-target e))
+                               (backward-delete id)
                                (jump-to-prev id)))
                           ((or "Ctrl" "Alt" "Shift")
                            (values))
@@ -326,11 +326,11 @@
                              (jump-to-inner))))
                           ("Delete"
                            (if (keyboard-event-ctrl-key? e)
-                               (forward-delete id (event-target e))
+                               (forward-delete id)
                                (jump-to-inner)))
                           ("Backspace"
                            (when (keyboard-event-ctrl-key? e)
-                             (backward-delete id (event-target e))
+                             (backward-delete id)
                              (jump-to-prev id)))
                           (key
                            (when (and (= (string-length key) 1)
@@ -375,13 +375,13 @@
                                  "deleteSoftLineForward"
                                  "deleteHardLineForward")
                              (when (string-null? (element-inner-text elem))
-                               (forward-delete id elem)))
+                               (forward-delete id)))
                             ((or "deleteContentBackward"
                                  "deleteWordBackward"
                                  "deleteSoftLineBackward"
                                  "defleteHardLineBackward")
                              (when (string-null? (element-inner-text elem))
-                               (backward-delete (tree-next *tree* id) elem)))
+                               (backward-delete (tree-next *tree* id))))
                             (_ (values))))))
                     ;; Synchronize element text with the relevant atom
                     ;; node.
@@ -493,14 +493,14 @@
                           ("Delete"
                            (cond
                             ((keyboard-event-ctrl-key? e)
-                             (forward-delete id (event-target e)))
+                             (forward-delete id))
                             (else
                              (prevent-default! e)
                              (jump-to-next id))))
                           ("Backspace"
                            (cond
                             ((keyboard-event-ctrl-key? e)
-                             (backward-delete id (event-target e)))
+                             (backward-delete id))
                             (else
                              (prevent-default! e)
                              (jump-to-prev id))))
@@ -568,13 +568,13 @@
                            "deleteSoftLineForward"
                            "deleteHardLineForward")
                        (when (string-null? (element-inner-text/trimmed elem))
-                         (forward-delete id elem)))
+                         (forward-delete id)))
                       ((or "deleteContentBackward"
                            "deleteWordBackward"
                            "deleteSoftLineBackward"
                            "defleteHardLineBackward")
                        (when (string-null? (element-inner-text/trimmed elem))
-                         (backward-delete (tree-next *tree* id) elem)))
+                         (backward-delete (tree-next *tree* id))))
                       (_ (values))))))
               ;; Synchronize element text with the relevant atom node.
               (input
@@ -646,10 +646,10 @@
                        (redo-tree! id)))
                     ("Delete"
                      (when (keyboard-event-ctrl-key? e)
-                       (forward-delete id (event-target e))))
+                       (forward-delete id)))
                     ("Backspace"
                      (when (keyboard-event-alt-key? e)
-                       (backward-delete id (event-target e))))
+                       (backward-delete id)))
                     (_ (values))))))
            ,value)))
 
@@ -715,13 +715,13 @@
     (#f (values))
     (id (element-focus! (element-for-id id)))))
 
-(define (forward-delete id elem)
+(define (forward-delete id)
   (call-with-values (lambda () (tree-forward-delete *tree* id))
     (lambda (tree focused)
       (set-tree! tree)
       (element-focus! (element-for-id focused)))))
 
-(define (backward-delete id elem)
+(define (backward-delete id)
   (call-with-values (lambda () (tree-backward-delete *tree* id))
     (lambda (tree focused)
       (set-tree! tree)
@@ -864,12 +864,12 @@
              ((id . (? symbol? sym))
               (quote-node-shtml id sym))
              ((id . depth)
-              (open-delimiter id depth)))
+              (paren-node-shtml id 'open depth)))
            (reverse opens)))
     (define (close-delimiters)
       (map (match-lambda
              ((id . depth)
-              (close-delimiter id depth)))
+              (paren-node-shtml id 'close depth)))
            closes))
     (define (render-args args closes)
       (match args
@@ -908,8 +908,8 @@
           `(span (@ (class "editor-list"))
                  (span (@ (class "editor-group"))
                        ,@(open-delimiters)
-                       ,(open-delimiter id depth)
-                       ,(close-delimiter eol depth)
+                       ,(paren-node-shtml id 'open depth)
+                       ,(paren-node-shtml eol 'close depth)
                        ,@(close-delimiters))))
          ((child)
           `(span (@ (class "editor-list"))
