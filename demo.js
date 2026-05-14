@@ -59,6 +59,9 @@ async function load() {
         collapse: (s, node, offset) => s.collapse(node, offset),
         setBaseAndExtent: (s, an, ao, fn, fo) => s.setBaseAndExtent(an, ao, fn, fo),
         setPosition: (s, node, offset) => s.setPosition(node, offset)
+      },
+      clipboard: {
+        readText: () => navigator.clipboard.readText()
       }
     }
   });

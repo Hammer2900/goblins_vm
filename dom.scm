@@ -1,6 +1,7 @@
 (define-module (dom)
   #:use-module (hoot ffi)
   #:use-module (hoot hashtables)
+  #:use-module (fibers promises)
   #:use-module (ice-9 match)
   #:use-module (srfi srfi-11)
   #:export (document-body
@@ -52,6 +53,8 @@
             selection-collapse!
             set-selection-base-and-extent!
             set-selection-position!
+
+            clipboard-text
 
             shtml->dom
             virtual-dom-render))
@@ -214,6 +217,12 @@
   "selection" "setBaseAndExtent"
   (ref extern) (ref extern) i32 (ref extern) i32 -> none)
 
+(define-foreign %clipboard-text
+  "clipboard" "readText"
+  -> (ref extern))
+(define (clipboard-text)
+  (await (%clipboard-text)))
+
 (define procedure->external/cached
   (let ((cache (make-weak-key-hashtable)))
     (lambda (proc)
@@ -231,6 +240,8 @@
     ;; The simple case: a string representing a text node.
     ((? string? str)
      (make-text-node str))
+    ((? char? ch)
+     (make-text-node (string ch)))
     ((? number? x)
      (make-text-node (number->string x)))
     ((? symbol? sym)
@@ -355,6 +366,10 @@
        (if (and (string? new) (string=? old new))
            node
            (render-and-replace node new)))
+      ((? char?)
+       (if (and (char? new) (char=? old new))
+           node
+           (render-and-replace node new)))
       ((? number?)
        (if (and (number? new) (= old new))
            node
@@ -381,7 +396,8 @@
          (match new
            ;; Old node was an element, but the new node is a text
            ;; node, so replace the element subtree with a text node.
-           ((or (? string?) (? number?) (? symbol?) (? keyword?) #t #f)
+           ((or (? string?) (? char?) (? number?)
+                (? symbol?) (? keyword?) #t #f)
             (render-and-replace node new))
            (((? symbol? new-tag) . new-rest)
             (let-values (((new-attrs new-children)

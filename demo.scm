@@ -10,7 +10,6 @@
 (define *tree* (make-empty-tree))
 (define *undo-stack* '())
 (define *redo-stack* '())
-(define *selection* (list (tree-root *tree*) 0))
 (define *vdom* #f)
 
 (define (render!)
@@ -23,6 +22,7 @@
   '((and . #t)
     (call-with-prompt . 1)
     (call-with-values . 1)
+    (cond . 0)
     (define . 1)
     (define* . 1)
     (define-module . 1)
@@ -92,6 +92,9 @@
   (when id
     (element-focus! (get-element-by-id (exp-id id)))))
 
+(define (element-inner-text/trimmed elem)
+  (string-trim-both (element-inner-text elem)))
+
 (define (highlight-class i)
   (string-append "editor-highlight-" (number->string (modulo i 6))))
 
@@ -112,6 +115,7 @@
             (class ,(string-append "editor-node " class))
             (tabindex "0")
             (click ,(lambda (e) (element-focus! (event-target e))))
+            (paste ,(lambda (e) (paste (clipboard-text) id 0)))
             (keydown ,(lambda (e)
                         (stop-propagation! e)
                         (match (pk 'paren-key (keyboard-event-key e))
@@ -178,8 +182,86 @@
                              (insert id (string->sexp key))))))))
          ,str))
 
-(define (element-inner-text/trimmed elem)
-  (string-trim-both (element-inner-text elem)))
+(define (quote-node-shtml id type)
+  `(span (@ (id ,(exp-id id))
+            (class "editor-node editor-quote")
+            (tabindex "0")
+            (click ,(lambda (e) (element-focus! (event-target e))))
+            (paste ,(lambda (e) (paste (clipboard-text) id 0)))
+            (keydown ,(lambda (e)
+                        (stop-propagation! e)
+                        (match (pk 'quote-key (keyboard-event-key e))
+                          ("ArrowLeft"
+                           (prevent-default! e)
+                           (if (keyboard-event-ctrl-key? e)
+                               (jump-to-prev-sexp id)
+                               (jump-to-prev id)))
+                          ("ArrowRight"
+                           (prevent-default! e)
+                           (if (keyboard-event-ctrl-key? e)
+                               (jump-to-next-sexp id)
+                               ;; Skip over hidden atom node.
+                               (jump-to-next (tree-next *tree* id))))
+                          ("ArrowUp"
+                           (jump-to-prev-sexp id))
+                          ("ArrowDown"
+                           (jump-to-next-sexp id))
+                          ("Enter"
+                           (insert id (string->symbol "")))
+                          ("("
+                           (let ((elem (event-target e)))
+                             (if (keyboard-event-alt-key? e)
+                                 (wrap id elem)
+                                 ;; TODO: This should shove the quoted
+                                 ;; item into the parent and open a
+                                 ;; new list that is within the quote.
+                                 (values))))
+                          (")"
+                           (jump-to-eol (tree-parent *tree* id)))
+                          (" "
+                           (prevent-default! e)
+                           (insert (tree-next-eol *tree* id) '#{}#))
+                          ("\""
+                           (prevent-default! e)
+                           (insert (tree-next-eol *tree* id) ""))
+                          ("z"
+                           (cond
+                            ((keyboard-event-ctrl-key? e)
+                             (prevent-default! e)
+                             (undo-tree! id))
+                            (else
+                             (prevent-default! e)
+                             (insert (tree-next-eol *tree* id) 'z))))
+                          ("y"
+                           (cond
+                            ((keyboard-event-ctrl-key? e)
+                             (prevent-default! e)
+                             (redo-tree! id))
+                            (else
+                             (prevent-default! e)
+                             (insert (tree-next-eol *tree* id) 'y))))
+                          ("Delete"
+                           (if (keyboard-event-ctrl-key? e)
+                               (forward-delete id (event-target e))
+                               (jump-to-next id)))
+                          ("Backspace"
+                           (if (keyboard-event-ctrl-key? e)
+                               (backward-delete id (event-target e))
+                               (jump-to-prev id)))
+                          ((or "Ctrl" "Alt" "Shift")
+                           (values))
+                          (key
+                           (when (and (= (string-length key) 1)
+                                      (not (keyboard-event-ctrl-key? e))
+                                      (not (keyboard-event-alt-key? e)))
+                             (prevent-default! e)
+                             (insert (tree-next-eol *tree* id)
+                                     (string->sexp key))))))))
+         ,(match type
+            ('quote "'")
+            ('quasiquote "`")
+            ('unquote ",")
+            ('unquote-splicing ",@"))))
 
 (define (string-node-shtml id value)
   (let ((elem-id (exp-id id)))
@@ -211,7 +293,10 @@
                           ("ArrowUp"
                            (jump-to-prev-sexp id))
                           ("ArrowDown"
-                           (jump-to-next-sexp id))
+                           (element-focus!
+                            (element-next-sibling
+                             (element-next-sibling
+                              (event-target e)))))
                           ("("
                            (let ((elem (event-target e)))
                              (if (keyboard-event-alt-key? e)
@@ -315,11 +400,10 @@
                                (let ((s (selection))
                                      (target (event-target e)))
                                  (when (and (selection-collapsed? s)
-                                            (zero? (selection-focus-offset s)))
-                                   (pk 'string-inner-prev)
+                                            (zero? (pk 'offset (selection-focus-offset s))))
                                    (prevent-default! e)
                                    (element-focus!
-                                    (element-previous-sibling (event-current-target e)))))))
+                                    (element-previous-sibling (event-target e)))))))
                           ("ArrowRight"
                            (if (keyboard-event-ctrl-key? e)
                                (jump-to-next-sexp id)
@@ -333,9 +417,11 @@
                                    (element-focus!
                                     (element-next-sibling target))))))
                           ("ArrowUp"
-                           (jump-to-prev-sexp id))
+                           (element-focus!
+                            (element-previous-sibling (event-target e))))
                           ("ArrowDown"
-                           (jump-to-next-sexp id))
+                           (element-focus!
+                            (element-next-sibling (event-target e))))
                           ("z"
                            (when (keyboard-event-ctrl-key? e)
                              (prevent-default! e)
@@ -369,7 +455,10 @@
                                (jump-to-next-sexp id)
                                (jump-to-next id)))
                           ("ArrowUp"
-                           (jump-to-prev-sexp id))
+                           (element-focus!
+                            (element-previous-sibling
+                             (element-previous-sibling
+                              (event-target e)))))
                           ("ArrowDown"
                            (jump-to-next-sexp id))
                           ("("
@@ -448,10 +537,12 @@
               "editor-symbol"))
          ((? keyword?) "editor-keyword")
          ((? number?) "editor-number")
+         ((? char?) "editor-char")
          ((or #t #f) "editor-boolean"))))
     `(span (@ (id ,elem-id)
               (class ,(node-classes))
               (contenteditable "plaintext-only")
+              ;; (spellcheck "false")
               (tabindex "0")
               (focusout ,(lambda (e) (delete-maybe e)))
               (beforeinput
@@ -587,22 +678,31 @@
     (#f (values))
     (prev
      (let ((elem (element-for-id prev)))
-       (match (tree-ref *tree* prev)
-         ;; Move to the closing quote of a string atom node.
-         ((? string-node?)
-          (element-focus!
-           (element-next-sibling
-            (element-next-sibling elem))))
-         ;; Move to the last character of a non-string atom node.
-         ((? atom-node?)
-          (element-focus! elem)
-          (set-selection-base-and-extent!
-           (selection) elem 1 elem 1))
-         ;; Move to the end of a compound node.
-         (_ (element-focus! elem)))))))
+       ;; Skip hidden nodes.
+       (if (external-null? elem)
+           (jump-to-prev prev)
+           (match (tree-ref *tree* prev)
+             ;; Move to the closing quote of a string atom node.
+             ((? string-node?)
+              (element-focus!
+               (element-next-sibling
+                (element-next-sibling elem))))
+             ;; Move to the last character of a non-string atom node.
+             ((? atom-node?)
+              (element-focus! elem)
+              (set-selection-base-and-extent!
+               (selection) elem 1 elem 1))
+             (_ (element-focus! elem))))))))
 
 (define (jump-to-next id)
-  (focus-maybe (tree-next *tree* id)))
+  (match (tree-next *tree* id)
+    (#f (values))
+    (next
+     (let ((elem (element-for-id next)))
+       ;; Skip hidden nodes
+       (if (external-null? elem)
+           (jump-to-next next)
+           (element-focus! elem))))))
 
 (define (jump-to-prev-sexp id)
   (focus-maybe (tree-prev-sexp *tree* id)))
@@ -627,13 +727,142 @@
       (set-tree! tree)
       (element-focus! (element-for-id focused)))))
 
+;; The general idea with pasting is that we parse the pasted text and
+;; before editing operations as if it were the user entering in each
+;; character.
+(define (paste str id offset)
+  ;; Attempt to accept garbage.
+  (define (string->sexp* str)
+    (or (false-if-exception (string->sexp str))
+        (string->symbol str)))
+  (define (consume-whitespace port)
+    (match (peek-char port)
+      ((or #\space #\tab #\newline)
+       (read-char port)
+       (consume-whitespace port))
+      (_ (values))))
+  (define (paste-quoted port tree id offset name)
+    (let*-values (((tree lst) (tree-open tree id))
+                  ((tree atom) (tree-insert-atom tree lst name))
+                  ((tree last) (paste* port tree atom #f)))
+      (values tree lst)))
+  (define (paste* port tree id offset)
+    (consume-whitespace port)
+    (match (peek-char port)
+      ((? eof-object?)
+       (values tree id))
+      ((or #\( #\[)
+       (read-char port)
+       (let*-values (((tree lst) (tree-open tree id)))
+         (let lp ((tree tree) (cur lst))
+           (match (peek-char port)
+             ((or (? eof-object?) #\) #\])
+              (read-char port)
+              (values tree lst))
+             (_
+              (let-values (((tree id) (paste* port tree cur #f)))
+                (match (tree-ref tree id)
+                  ((? compound-node? node)
+                   (lp tree (compound-node-eol node)))
+                  (_ (lp tree id)))))))))
+      (#\'
+       (read-char port)
+       (paste-quoted port tree id #f 'quote))
+      (#\`
+       (read-char port)
+       (paste-quoted port tree id #f 'quasiquote))
+      (#\,
+       (read-char port)
+       (match (peek-char port)
+         (#\@
+          (read-char port)
+          (paste-quoted port tree id #f 'unquote-splicing))
+         (_ (paste-quoted port tree id #f 'unquote))))
+      (#\"
+       (read-char port)
+       (let ((str (list->string
+                   (let lp ()
+                     (match (peek-char port)
+                       ((? eof-object?)
+                        '())
+                       (#\\
+                        (read-char port)
+                        (match (read-char port)
+                          ((? eof-object?)
+                           '())
+                          (ch
+                           (cons ch (lp)))))
+                       (#\"
+                        (read-char port)
+                        '())
+                       (ch
+                        (cons (read-char port) (lp))))))))
+         (tree-insert-atom tree id str)))
+      ;; FIXME: Support comments.
+      (#\;
+       (read-char port)
+       (let lp ()
+         (match (peek-char port)
+           ((? eof-object?)
+            tree)
+           (#\newline
+            (paste* port tree id #f))
+           (_
+            (read-char port)
+            (lp)))))
+      (_
+       (let ((str (list->string
+                   (cons (read-char port)
+                         (let lp ()
+                           (match (peek-char port)
+                             ((or (? eof-object?)
+                                  #\( #\) #\"
+                                  #\space #\tab #\newline)
+                              '())
+                             (_ (cons (read-char port) (lp)))))))))
+         ;; If the paste is starting in the middle of an atom node,
+         ;; insert the string at the caret position.
+         (if offset
+             (match (tree-ref tree id)
+               (($ <node:atom> _ value)
+                (let* ((str (format #f "~a" value))
+                       (str* (string-append
+                              (substring str 0 offset)
+                              str
+                              (substring str offset)))
+                       (value* (call-with-input-string str* read))
+                       (tree (tree-set-atom tree id value*)))
+                  (values tree id))))
+             (let ((value (call-with-input-string str read)))
+               (tree-insert-atom tree id value)))))))
+  (call-with-input-string str
+    (lambda (port)
+      ;; The entire paste operation is a single transaction so it can
+      ;; be undone with one key press.
+      (let lp ((tree *tree*) (cur id))
+        (match (peek-char port)
+          ((? eof-object?)
+           (pk 'done)
+           (set-tree! tree)
+           ;; TODO: Move caret back to original offset.
+           (element-focus! (element-for-id id)))
+          (_
+           (pk 'paste)
+           (let-values (((tree next) (paste* port *tree* cur offset)))
+             (pk 'next next)
+             (lp tree next))))))))
+
 (define* (tree->shtml tree)
+  (define (quote? x)
+    (memq x '(quote quasiquote unquote unquote-splicing)))
   (let lp ((id (tree-root tree))
            (depth 0)
            (opens '())
            (closes '()))
     (define (open-delimiters)
       (map (match-lambda
+             ((id . (? symbol? sym))
+              (quote-node-shtml id sym))
              ((id . depth)
               (open-delimiter id depth)))
            (reverse opens)))
@@ -652,6 +881,7 @@
          ;; code as plain text out of the browser.
          (cons* " "
                 (lp middle (1+ depth) '() '())
+                '(span (@ (class "editor-break")))
                 (render-args args closes)))))
     (match (tree-ref tree id)
       (($ <node:atom> _ (? string? value))
@@ -693,32 +923,45 @@
           ;; aesthetic.  Special forms will have 0 or more arguments
           ;; and then everything else is in the body.  Standard forms
           ;; will just have arguments.
-          (let-values (((symbolic? args body)
+          (let-values (((sym args body)
                         (match (tree-ref tree first)
                           (($ <node:atom> _ (? symbol? sym))
                            (match (special-form-arguments sym)
                              ((or #t #f)
-                              (values #t rest '()))
+                              (values sym rest '()))
                              (nargs
                               (let-values (((args body) (split-at rest nargs)))
-                                (values #t args body)))))
+                                (values sym args body)))))
                           (_ (values #f rest '())))))
             (match body
               (()
-               (if symbolic?
-                   ;; Lists that start with a symbol get standard
-                   ;; procedure call styling where the arguments are
-                   ;; aligned to the right of the operator.
-                   `(span (@ (class "editor-call"))
-                          ,(lp first (1+ depth) (alist-cons id depth opens) '())
-                          (span (@ (class "editor-arguments"))
-                                ,@(render-args args (alist-cons eol depth closes))))
+               (if (symbol? sym)
+                   (if (and (memq sym '(quote quasiquote unquote unquote-splicing))
+                            (= (length rest) 1))
+                       ;; Lists that start with a quotation get styled
+                       ;; with the expected prefix.
+                       (match rest
+                         ((quoted)
+                          (lp quoted depth (alist-cons id sym opens) closes)))
+                       ;; Lists that start with a symbol that aren't
+                       ;; quotations get standard procedure call styling
+                       ;; where the arguments are aligned to the right
+                       ;; of the operator.
+                       `(span (@ (class "editor-call"))
+                              ,(lp first (1+ depth) (alist-cons id depth opens) '())
+                              (span (@ (class "editor-arguments"))
+                                    ,@(render-args args (alist-cons eol depth closes)))))
                    ;; Lists that don't start with a symbol have a
                    ;; slightly different style where the arguments are
                    ;; aligned to the right of the opening parenthesis.
                    `(span (@ (class "editor-list"))
                           ,(lp first (1+ depth) (alist-cons id depth opens) '())
-                          ,@(render-args args (alist-cons eol depth closes)))))
+                          ,@(render-args args (alist-cons eol depth closes)))
+                   ;; ((or 'quote 'quasiquote 'unquote 'unquote-splicing)
+                   ;;  (match rest
+                   ;;    (()
+                   ;;     (lp first (1+ depth) (alist-cons id depth opens) '()))))
+                   ))
               (_
                ;; Special forms have arguments and a body, each
                ;; indented differently.

@@ -7,8 +7,8 @@ body {
 .editor {
     display: flex;
     font-family: monospace, "Inconsolata";
-    font-size: 2em;
-    max-width: 75vw;
+    font-size: 1.5em;
+    max-width: 95vw;
     padding: 1rem;
     border: 1px solid;
     caret-color: #272a32;
@@ -70,22 +70,23 @@ body {
 }
 .editor-atom:focus,
 .editor-delimiter:focus,
+.editor-quote:focus,
 .editor-string-delimiter:focus,
 .editor-string-inner:focus {
-    background: #4ec8ff;
+    background: #ebebeb;
 }
 
 .editor-group-end {
     display: flex;
 }
 
-.editor-delimiter-open {
-    margin-bottom: auto;
-}
+/* .editor-delimiter-open { */
+/*     margin-bottom: auto; */
+/* } */
 
-.editor-delimiter-close {
-    margin-top: auto;
-}
+/* .editor-delimiter-close { */
+/*     margin-top: auto; */
+/* } */
 
 .editor-string {
     display: flex;
