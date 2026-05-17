@@ -420,7 +420,7 @@
          ;; it's a single float
          [#\F
           (read-byte in-port)
-          (bytevector-ieee-double-ref (get-bytevector-n in-port 4) 0
+          (bytevector-ieee-single-ref (get-bytevector-n in-port 4) 0
                                       (endianness big))]
          ;; it's a double float
          [#\D
