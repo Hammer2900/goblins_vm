@@ -31,7 +31,7 @@
 
             ;; pseudosingles (pretend to be a single precision float)
             make-pseudosingle pseudosingle?
-            psuedosingle->float
+            pseudosingle->float
 
             make-marshallers
             define-syrup-record-type
@@ -420,8 +420,9 @@
          ;; it's a single float
          [#\F
           (read-byte in-port)
-          (bytevector-ieee-single-ref (get-bytevector-n in-port 4) 0
-                                      (endianness big))]
+          (make-pseudosingle
+           (bytevector-ieee-single-ref (get-bytevector-n in-port 4) 0
+                                       (endianness big)))]
          ;; it's a double float
          [#\D
           (read-byte in-port)
