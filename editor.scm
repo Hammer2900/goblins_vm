@@ -5,6 +5,7 @@
   #:use-module (ice-9 match)
   #:use-module ((srfi srfi-1) #:select (fold))
   #:use-module (srfi srfi-9)
+  #:use-module (srfi srfi-11)
   #:export (<node:atom>
             make-atom-node
             atom-node?
@@ -40,10 +41,11 @@
             tree-nodes
             tree-ref
             tree-set
+            tree-parent
+            tree-ref-parent
             tree-set-atom
             tree-next
             tree-prev
-            tree-parent
             tree-next-sexp
             tree-prev-sexp
             tree-wrap
@@ -53,7 +55,10 @@
             tree-delete
             tree-forward-delete
             tree-backward-delete
+            tree-splice-sexp-delete-backward
             tree-node-empty?
+            tree-first-child
+            tree-quoted?
             tree->sexp
             sexp->tree))
 
@@ -166,6 +171,12 @@
     (($ <tree> root nodes)
      (make-tree root (hashmap-set nodes id node)))))
 
+(define (tree-parent tree id)
+  (node-parent (tree-ref tree id)))
+
+(define (tree-ref-parent tree id)
+  (tree-ref tree (tree-parent tree id)))
+
 (define (tree-set-atom tree id value)
   (match tree
     (($ <tree> root nodes)
@@ -173,9 +184,6 @@
        (($ <node:atom> parent)
         (let ((node (make-atom-node parent value)))
           (make-tree root (hashmap-set nodes id node))))))))
-
-(define (tree-parent tree id)
-  (node-parent (tree-ref tree id)))
 
 ;; Conversion routines
 (define* (tree->sexp tree #:optional (root (tree-root tree)))
@@ -444,14 +452,15 @@
                    (lp parent parent-node)
                    eol))))))))))
 
+(define (delete-subtree node nodes)
+  (match node
+    (($ <node:compound> parent type children eol)
+     (fold (lambda (child nodes)
+             (delete-subtree child (hashmap-remove nodes child)))
+           (hashmap-remove nodes eol) children))
+    (_ nodes)))
+
 (define (tree-delete tree id)
-  (define (delete-subtree node nodes)
-    (match node
-      (($ <node:compound> parent type children eol)
-       (fold (lambda (child nodes)
-               (delete-subtree child (hashmap-remove nodes child)))
-             (hashmap-remove nodes eol) children))
-      (_ nodes)))
   (match tree
     (($ <tree> root nodes)
      (let* ((node (hashmap-ref nodes id))
@@ -547,10 +556,73 @@
                               (values (tree-delete tree prev) id)
                               (lp tail child)))))))))))))))
 
+(define (tree-splice-sexp-delete-backward tree id)
+  (match tree
+    (($ <tree> root nodes)
+     (let* ((node (hashmap-ref nodes id))
+            (parent (node-parent node)))
+       (match (hashmap-ref nodes parent)
+         ;; Can't delete the root node.
+         (($ <node:compound> #f)
+          tree)
+         (($ <node:compound> grandparent type children eol)
+          ;; Delete all children to the left of id.
+          (let-values (((nodes spliced)
+                        (let lp ((nodes nodes) (children children))
+                          (match children
+                            (() (error "no such child" id))
+                            ((child . rest)
+                             (if (eqv? child id)
+                                 (values nodes children)
+                                 (lp (delete-subtree (hashmap-ref nodes child) nodes)
+                                     rest)))))))
+            (match (hashmap-ref nodes grandparent)
+              (($ <node:compound> great-grandparent type children eol*)
+               ;; Reparent the surviving child nodes to the
+               ;; grandparent.
+               (let* ((nodes (fold (lambda (child nodes)
+                                     (let* ((node (hashmap-ref nodes child))
+                                            (node (set-node-parent node grandparent)))
+                                       (hashmap-set nodes child node)))
+                                   nodes spliced))
+                      ;; Rewrite grandparent, splicing in the new nodes.
+                      (children (let lp ((children children))
+                                  (match children
+                                    (() spliced)
+                                    ((child . rest)
+                                     (if (eqv? child parent)
+                                         (append spliced rest)
+                                         (cons child (lp rest)))))))
+                      (gp (make-compound-node great-grandparent type children eol*))
+                      (nodes (hashmap-set nodes grandparent gp))
+                      ;; Delete parent node and associated EOL.
+                      (nodes (hashmap-remove nodes parent))
+                      (nodes (hashmap-remove nodes eol)))
+                 (make-tree root nodes)))))))))))
+
 (define (tree-node-empty? tree id)
   (match (tree-ref tree id)
     ((? compound-node? node)
      (null? (compound-node-children node)))
     ((? eol-node? node)
      (tree-node-empty? tree (eol-node-parent node)))
+    (_ #f)))
+
+(define (tree-first-child tree id)
+  (match (tree-ref tree id)
+    (($ <node:compound> _ _ (first . _))
+     first)
+    (_ #f)))
+
+(define (tree-quoted? tree id)
+  (match (tree-ref tree (tree-parent tree id))
+    (($ <node:compound> _ 'list (x y))
+     (and (eqv? id y)
+          (match (tree-ref tree x)
+            ((? atom-node? node)
+             (case (atom-node-ref node)
+               ((quote quasiquote unquote unquote-splicing)
+                #t)
+               (else #f)))
+            (_ #f))))
     (_ #f)))

@@ -122,7 +122,11 @@
                                (jump-to-next-sexp id)
                                (jump-to-next id)))
                           ("ArrowUp"
-                           (jump-to-prev-sexp id))
+                           (if (eq? type 'open)
+                               (if (keyboard-event-alt-key? e)
+                                   (splice-sexp-delete-backward id)
+                                   (jump-to-prev-sexp id))
+                               (jump-to-prev-sexp id)))
                           ("ArrowDown"
                            (jump-to-next-sexp id))
                           ("Enter"
@@ -140,6 +144,15 @@
                           ("\""
                            (prevent-default! e)
                            (insert id ""))
+                          ("'"
+                           (prevent-default! e)
+                           (insert-quote id 'quote '#{}#))
+                          ("`"
+                           (prevent-default! e)
+                           (insert-quote id 'quasiquote '#{}#))
+                          (","
+                           (prevent-default! e)
+                           (insert-quote id 'unquote '#{}#))
                           ("z"
                            (cond
                             ((keyboard-event-ctrl-key? e)
@@ -203,7 +216,9 @@
                                ;; Skip over hidden atom node.
                                (jump-to-next (tree-next *tree* id))))
                           ("ArrowUp"
-                           (jump-to-prev-sexp id))
+                           (if (keyboard-event-alt-key? e)
+                               (splice-sexp-delete-backward id)
+                               (jump-to-prev-sexp id)))
                           ("ArrowDown"
                            (jump-to-next-sexp id))
                           ("Enter"
@@ -224,6 +239,18 @@
                           ("\""
                            (prevent-default! e)
                            (insert (tree-next-eol *tree* id) ""))
+                          ("'"
+                           (prevent-default! e)
+                           (set-head id 'quote))
+                          ("`"
+                           (prevent-default! e)
+                           (set-head id 'quasiquote))
+                          (","
+                           (prevent-default! e)
+                           (set-head id 'unquote))
+                          ("@"
+                           (prevent-default! e)
+                           (set-head id 'unquote-splicing))
                           ("z"
                            (cond
                             ((keyboard-event-ctrl-key? e)
@@ -243,7 +270,9 @@
                           ("Delete"
                            (if (keyboard-event-ctrl-key? e)
                                (forward-delete id)
-                               (jump-to-next id)))
+                               (match (compound-node-children (tree-ref *tree* id))
+                                 ((_ child)
+                                  (splice-sexp-delete-backward child)))))
                           ("Backspace"
                            (if (keyboard-event-ctrl-key? e)
                                (backward-delete id)
@@ -291,7 +320,9 @@
                                (jump-to-next-sexp id)
                                (jump-to-inner)))
                           ("ArrowUp"
-                           (jump-to-prev-sexp id))
+                           (if (keyboard-event-alt-key? e)
+                               (splice-sexp-delete-backward id)
+                               (jump-to-prev-sexp id)))
                           ("ArrowDown"
                            (element-focus!
                             (element-next-sibling
@@ -519,14 +550,33 @@
       (string-null?
        (element-inner-text/trimmed
         (event-target e))))
+    (define (caret-at-beginning?)
+      (let ((s (selection)))
+        (and (selection-collapsed? s)
+             (zero? (selection-focus-offset s)))))
     (define (delete-maybe e)
       (if (empty? e)
           (let* ((prev (tree-prev *tree* id))
-                 (tree (tree-delete *tree* id)))
-            (set-tree! tree)
-            (element-remove! (event-target e))
-            prev)
+                     (tree (tree-delete *tree* id)))
+                (set-tree! tree)
+                prev)
+          ;; ;; When quoted, delete the enclosing quote, too.
+          ;; (if (tree-quoted? *tree* id)
+          ;;     (let* ((parent (tree-parent *tree* id))
+          ;;            (prev (tree-prev *tree* parent))
+          ;;            (tree (tree-delete *tree* parent)))
+          ;;       (set-tree! tree)
+          ;;       prev)
+          ;;     (let* ((prev (tree-prev *tree* id))
+          ;;            (tree (tree-delete *tree* id)))
+          ;;       (set-tree! tree)
+          ;;       prev))
           id))
+    (define (wrap-or-insert-quote e sym)
+      (if (caret-at-beginning?)
+          (wrap-quote id sym)
+          (let ((focus (delete-maybe e)))
+            (insert-quote focus sym '#{}#))))
     (define (node-classes)
       (string-append
        "editor-node editor-atom "
@@ -556,6 +606,15 @@
                           (prevent-default! e)
                           (let ((focus (delete-maybe e)))
                             (insert focus "")))
+                         ("'"
+                          (prevent-default! e)
+                          (wrap-or-insert-quote e 'quote))
+                         ("`"
+                          (prevent-default! e)
+                          (wrap-or-insert-quote e 'quasiquote))
+                         (","
+                          (prevent-default! e)
+                          (wrap-or-insert-quote e 'unquote))
                          (_ (values))))
                       ((or "insertLineBreak"
                            "insertParagraph"
@@ -601,11 +660,9 @@
                     ("ArrowLeft"
                      (if (keyboard-event-ctrl-key? e)
                          (jump-to-prev-sexp id)
-                         (let ((s (selection)))
-                           (when (and (selection-collapsed? s)
-                                      (zero? (selection-focus-offset s)))
-                             (prevent-default! e)
-                             (jump-to-prev id)))))
+                         (when (caret-at-beginning?)
+                           (prevent-default! e)
+                           (jump-to-prev id))))
                     ("ArrowRight"
                      (if (keyboard-event-ctrl-key? e)
                          (jump-to-next-sexp id)
@@ -619,7 +676,9 @@
                              (jump-to-next id)))))
                     ("ArrowUp"
                      (let ((pos (delete-maybe e)))
-                       (jump-to-prev-sexp pos)))
+                       (if (keyboard-event-alt-key? e)
+                           (splice-sexp-delete-backward id)
+                           (jump-to-prev-sexp pos))))
                     ("ArrowDown"
                      (let ((pos (delete-maybe e)))
                        (jump-to-next-sexp pos)))
@@ -654,18 +713,37 @@
            ,value)))
 
 (define (wrap id elem)
-  (call-with-values (lambda () (tree-wrap *tree* id))
-    (lambda (tree new)
-      (set-tree! tree)
-      (element-focus! (element-for-id new)))))
+  (let-values (((tree new) (tree-wrap *tree* id)))
+    (set-tree! tree)
+    (element-focus! (element-for-id new))))
+
+(define (wrap-quote id sym)
+  (let*-values (((tree lst) (tree-wrap *tree* id))
+                ((tree atom) (tree-insert-atom tree lst sym)))
+    (set-tree! tree)
+    (element-focus! (element-for-id id))))
 
 (define (insert id init)
-  (call-with-values (lambda () (tree-insert-atom *tree* id init))
-    (lambda (tree new)
-      (set-tree! tree)
-      (let ((focus-elem (element-for-id new)))
-        (element-focus! focus-elem)
-        (set-selection-position! (selection) focus-elem 1)))))
+  ;; If the node is quoted then insert the element *after* the parent.
+  (if (and (not (compound-node? (tree-ref *tree* id)))
+           (tree-quoted? *tree* id))
+      (insert (compound-node-eol (tree-ref-parent *tree* id)) init)
+      (let-values (((tree new) (tree-insert-atom *tree* id init)))
+        (set-tree! tree)
+        (let ((focus-elem (element-for-id new)))
+          (element-focus! focus-elem)
+          (set-selection-position! (selection) focus-elem 1)))))
+
+(define (insert-quote id sym init)
+  (if (tree-quoted? *tree* id)
+      (insert-quote (compound-node-eol (tree-ref-parent *tree* id)) sym init)
+      (let*-values (((tree atom) (tree-insert-atom *tree* id init))
+                    ((tree lst) (tree-wrap tree atom))
+                    ((tree quo) (tree-insert-atom tree lst sym)))
+        (set-tree! tree)
+        (let ((focus-elem (element-for-id atom)))
+          (element-focus! focus-elem)
+          (set-selection-position! (selection) focus-elem 1)))))
 
 (define (open id elem)
   (call-with-values (lambda () (tree-open *tree* id))
@@ -705,10 +783,24 @@
            (element-focus! elem))))))
 
 (define (jump-to-prev-sexp id)
-  (focus-maybe (tree-prev-sexp *tree* id)))
+  (match (tree-prev-sexp *tree* id)
+    (#f (values))
+    (prev
+     (let ((elem (element-for-id prev)))
+       ;; Skip hidden nodes
+       (if (external-null? elem)
+           (jump-to-prev-sexp prev)
+           (element-focus! elem))))))
 
 (define (jump-to-next-sexp id)
-  (focus-maybe (tree-next-sexp *tree* id)))
+  (match (tree-next-sexp *tree* id)
+    (#f (values))
+    (next
+     (let ((elem (element-for-id next)))
+       ;; Skip hidden nodes
+       (if (external-null? elem)
+           (jump-to-next-sexp next)
+           (element-focus! elem))))))
 
 (define (jump-to-eol id)
   (match (tree-next-eol *tree* id)
@@ -726,6 +818,13 @@
     (lambda (tree focused)
       (set-tree! tree)
       (element-focus! (element-for-id focused)))))
+
+(define (set-head id x)
+  (set-tree! (tree-set-atom *tree* (tree-first-child *tree* id) x)))
+
+(define (splice-sexp-delete-backward id)
+  (set-tree! (tree-splice-sexp-delete-backward *tree* id))
+  (element-focus! (element-for-id id)))
 
 ;; The general idea with pasting is that we parse the pasted text and
 ;; before editing operations as if it were the user entering in each
