@@ -184,7 +184,9 @@
                                (if (and (eq? type 'close)
                                         (tree-node-empty? *tree* id))
                                    (backward-delete id)
-                                   (jump-to-prev id))))
+                                   (if (tree-quoted? *tree* id)
+                                       (splice-sexp-delete-backward id)
+                                       (jump-to-prev id)))))
                           ((or "Ctrl" "Alt" "Shift")
                            (values))
                           (key
@@ -814,10 +816,9 @@
       (element-focus! (element-for-id focused)))))
 
 (define (backward-delete id)
-  (call-with-values (lambda () (tree-backward-delete *tree* id))
-    (lambda (tree focused)
-      (set-tree! tree)
-      (element-focus! (element-for-id focused)))))
+  (let-values (((tree focused) (tree-backward-delete *tree* id)))
+    (set-tree! tree)
+    (element-focus! (element-for-id focused))))
 
 (define (set-head id x)
   (set-tree! (tree-set-atom *tree* (tree-first-child *tree* id) x)))
