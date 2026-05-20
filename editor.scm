@@ -22,7 +22,7 @@
 
             <node:eol>
             eol-node?
-            eold-node-parent
+            eol-node-parent
 
             <node:compound>
             compound-node?
@@ -615,14 +615,21 @@
     (_ #f)))
 
 (define (tree-quoted? tree id)
-  (match (tree-ref tree (tree-parent tree id))
-    (($ <node:compound> _ 'list (x y))
-     (and (eqv? id y)
-          (match (tree-ref tree x)
-            ((? atom-node? node)
-             (case (atom-node-ref node)
-               ((quote quasiquote unquote unquote-splicing)
-                #t)
-               (else #f)))
-            (_ #f))))
-    (_ #f)))
+  (let ((parent (tree-parent tree id)))
+    (match (tree-ref tree parent)
+      (($ <node:compound> _ type children eol)
+       (if (eqv? id eol)
+           (tree-quoted? tree parent)
+           (match children
+             ((x y)
+              (and (eq? type 'list)
+                   (eqv? id y)
+                   (match (tree-ref tree x)
+                     ((? atom-node? node)
+                      (case (atom-node-ref node)
+                        ((quote quasiquote unquote unquote-splicing)
+                         #t)
+                        (else #f)))
+                     (_ #f))))
+             (_ #f))))
+      (_ #f))))

@@ -19,6 +19,8 @@ body {
     display: flex;
     margin-bottom: auto;
     white-space: nowrap;
+    min-width: 1ch;
+    min-height: 1lh;
 }
 
 .editor-call {
@@ -72,12 +74,18 @@ body {
 .editor-delimiter:focus,
 .editor-quote:focus,
 .editor-string-delimiter:focus,
-.editor-string-inner:focus {
+.editor-string-inner:focus,
+.editor-empty-root:focus {
     background: #ebebeb;
 }
 
 .editor-group-end {
     display: flex;
+}
+
+.editor-empty-root {
+    width: 1ch;
+    height: 1lh;
 }
 
 /* .editor-delimiter-open { */
