@@ -61,7 +61,7 @@
 ;;   https://capnproto.org/rpc.html
 ;;   https://github.com/sandstorm-io/capnproto/blob/master/c++/src/capnp/rpc.capnp
 ;;
-;; For the gory details of "Chris figuring out how CapTP works"
+;; For the gory details of "Christine figuring out how CapTP works"
 ;; see these monster threads:
 ;;   https://groups.google.com/g/cap-talk/c/xWv2-J62g-I
 ;;   https://groups.google.com/g/cap-talk/c/-JYtc-L9OvQ
