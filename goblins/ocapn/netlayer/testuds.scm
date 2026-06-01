@@ -19,6 +19,7 @@
   #:use-module (goblins ocapn captp)
   #:use-module (goblins ocapn ids)
   #:use-module (goblins utils random-name)
+  #:use-module (goblins vat)
   #:use-module (ice-9 getopt-long)
   #:use-module (ice-9 match)
   #:use-module (ice-9 curried-definitions)
@@ -27,7 +28,7 @@
 (define* (^testuds-netlayer bcom netlayers-dir
                             #:key (peer-id (random-name 32)))
   (define our-location
-    (make-ocapn-peer 'testuds peer-id '()))
+    (make-ocapn-peer 'testuds peer-id #f))
   (define (sock-filename-for-id id)
     (string-append netlayers-dir file-name-separator-string id
                    ".sock"))
@@ -36,14 +37,18 @@
   (define our-server-sock
     (make-server-unix-domain-socket (sock-filename-for-id peer-id)))
   (define (incoming-accept)
-    (match (accept our-server-sock SOCK_NONBLOCK)
-      ((client . addr)
-       (setvbuf client 'block 1024)
-       client)))
+    (spawn-fibrous-vow
+     (lambda ()
+       (match (accept our-server-sock SOCK_NONBLOCK)
+         ((client . addr)
+          (setvbuf client 'block 1024)
+          client)))))
   (define (outgoing-connect-location location)
     (unless (eq? (ocapn-peer-transport location) 'testuds)
       (error "Wrong netlayer! Expected testuds" location))
-    (make-client-unix-domain-socket (sock-filename-for-id
-                                     (ocapn-peer-designator location))))
+    (spawn-fibrous-vow
+     (lambda ()
+       (make-client-unix-domain-socket (sock-filename-for-id
+                                        (ocapn-peer-designator location))))))
   (^base-port-netlayer bcom our-location
                        incoming-accept outgoing-connect-location))
