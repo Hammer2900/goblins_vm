@@ -131,8 +131,10 @@ let bindings = {
     }
 };
 
-if (typeof exports === 'undefined') {
-    // TODO: Add code for non-NodeJS runtimes.
-} else {
+if (typeof exports !== 'undefined') {
+    // NodeJS runtime.
     exports.user_imports = bindings;
 }
+
+// Other EcmaScript runtimes.
+export const user_imports = bindings;
