@@ -18,7 +18,7 @@ let bindings = {
     webSocket: {
         close: (ws) => ws.close(),
         new(url) {
-            ws = new WebSocket(url);
+            let ws = new WebSocket(url);
             ws.binaryType = "arraybuffer";
             return ws;
         },
