@@ -155,6 +155,8 @@ new cell holding the temperature and the same reference to the heater:
    ;; Invoked with current room temp
    [(tick current-temp)
     (if (< current-temp ($ set-temp-cell))
+	;; <-np is a fire-and-forget optimization over
+	;; <- as it does not return a promise.
 	(<-np heater-refr 'turn-on)
 	(<-np heater-refr 'turn-off))]))
 @end lisp

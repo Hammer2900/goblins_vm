@@ -440,7 +440,8 @@ on promises.  The following code fixes the blocking issue:
 @lisp
 (use-modules (goblins)
              (goblins vat)
-             (fibers))
+             (fibers)
+             (fibers conditions))
 
 (define-actor (^sleeper _bcom)
   (lambda ()
@@ -471,6 +472,9 @@ on promises.  The following code fixes the blocking issue:
   (on (<- hello)
       (lambda (response)
         (pk 'hello-said response))))
+
+;; Prevent the program from exiting immediately
+(wait (make-condition))
 @end lisp
 
 This time we get:
@@ -972,7 +976,7 @@ goblins[1]> (define fork-motors
 Since asynchronous message passing with @code{<-} works across
 peers, it does not matter whether interactions with
 @code{fork-motors} are local or via objects communicating over the
-network.  This example treat @code{fork-motors} as living on peer A,
+network.  This example treat @code{fork-motors} as living on vat A,
 and so the following interactions will happen with invocations
 originating from peer B@.
 
@@ -984,7 +988,7 @@ conventional suffix given for promises in Goblins):
 @lisp
 goblins[1]> ,q
 scheme> ,enter-vat b-vat
-;; Interaction on peer B, communicating with fork-motors on A
+;; Interaction on vat B, communicating with fork-motors on A
 goblins[1]> (define car-vow
               (<- fork-motors 'make-car "Explorist" "blue"))
 @end lisp
@@ -999,7 +1003,7 @@ following the pattern most other distributed programming systems use),
 you would end up with something like:
 
 @lisp
-;; Interaction on peer B, communicating with A
+;; Interaction on vat B, communicating with A
 goblins[1]> (on car-vow                    ; B->A: first resolve the car-vow
                 (lambda (our-car)          ; A->B: car-vow resolved as our-car
                   (on (<- our-car 'drive)  ; B->A: now we can message our-car
@@ -1013,7 +1017,7 @@ that you do not need to do an @code{on} of @code{car-vow} to later
 message @code{our-car}; you can simply message @code{car-vow} directly:
 
 @lisp
-;; Interaction on peer B, communicating with A
+;; Interaction on vat B, communicating with A
 goblins[1]> (on (<- car-vow 'drive)       ; B->A: send message to future car
                 (lambda (val)             ; A->B: result of that message
                   (format #t "Heard: ~a\n" val)))
@@ -1038,7 +1042,7 @@ B => A => B
 @end example
 
 
-In other words, peer B can say to peer A: ``Make me a car, and
+In other words, vat B can say to vat A: ``Make me a car, and
 as soon as that car is ready, I want to drive it!''
 
 With this in mind, the promise behind Mark Miller's quote at the
