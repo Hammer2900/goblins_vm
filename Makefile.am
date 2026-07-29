@@ -254,7 +254,10 @@ CLEANFILES =					\
 
 if HAVE_HOOT
 
-EXTRA_DIST += hoot-ffi/imports.js hoot-ffi/imports.scm
+hoot_ffidir = $(pkgdatadir)/hoot-ffi
+hoot_ffi_DATA = hoot-ffi/imports.js
+
+EXTRA_DIST += $(hoot_ffi_DATA) hoot-ffi/imports.scm
 
 hootmoddir=$(prefix)/share/guile-hoot/site
 
