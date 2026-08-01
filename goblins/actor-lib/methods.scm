@@ -1,5 +1,7 @@
 ;;; Copyright 2019-2021 Christine Lemmer-Webber
 ;;; Copyright 2023 Juliana Sims
+;;; Copyright 2026 David Thompson
+;;; Copyright 2026 Nikolaos Chatzikonstantinou
 ;;;
 ;;; Licensed under the Apache License, Version 2.0 (the "License");
 ;;; you may not use this file except in compliance with the License.
@@ -15,35 +17,28 @@
 
 (define-module (goblins actor-lib methods)
   #:use-module (ice-9 match)
-  #:use-module (srfi srfi-1)
-  #:use-module ((goblins core) #:hide ($))
-  #:use-module ((goblins core) #:select ($) #:prefix $)
+  #:use-module (goblins core)
   #:use-module (goblins actor-lib opportunistic)
   #:export (methods extend-methods))
 
-(define-syntax expand-method-defn
+(define-syntax dispatch-table
   (syntax-rules ()
-    ((_ ((method-name . method-args) body ...))
-     (let ((method-name (lambda* method-args body ...)))
-       (cons 'method-name method-name)))
-    ((_ (method-name method-expr))
-     (cons 'method-name method-expr))))
+    ((_ name fallback)
+     ;; The first argument to the fallback is the requested method
+     ;; name that was not found.
+     (lambda args (apply fallback name args)))
+    ((_ name ((method-name . method-args) method-body ...) . rest)
+     (if (eq? name 'method-name)
+         (lambda* method-args method-body ...)
+         (dispatch-table name . rest)))
+    ((_ name (method-name method-expr) . rest)
+     (if (eq? name 'method-name)
+         method-expr
+         (dispatch-table name . rest)))))
 
-;; TODO: This is *not* a performant version of methods.  It's setting
-;; up an alist... that requires unnecessary list traversal.
-;; Instead we could make this more efficient by having an inlined set
-;; of tests, kind of like how a cond can expand into a set of nested
-;; `if' expressions.
 (define-syntax-rule (methods* fallback method-defn ...)
-  (let* ((all-methods (list (expand-method-defn method-defn) ...))
-         (this-fallback fallback)
-         (methods
-          (lambda (method . args)
-            (let ((found-method (assq-ref all-methods method)))
-              (if found-method
-                  (apply found-method args)
-                  (apply fallback method args))))))
-    methods))
+  (lambda (name . args)
+    (apply (dispatch-table name method-defn ... fallback) args)))
 
 (define (no-such-method method . args)
   (error "No such method" method args))
@@ -51,9 +46,13 @@
 (define-syntax-rule (methods method-defns ...)
   ;;; Describe a collection of methods that an actor accepts.
   ;;;
-  ;;; A Method-Defn has the form `((name args...) expr)' where 'NAME is the symbol
-  ;;; upon which the method dispatches, ARGS are the arguments it accepts, and
-  ;;; EXPR is the expression evaluated when the method is called.
+  ;;; A METHOD-DEFN has one of two forms:
+  ;;; 1. `((name args...) body ...)' where 'NAME is the symbol
+  ;;;    upon which the method dispatches, ARGS are the arguments
+  ;;;    the dispatch method accepts, and BODY is the expression
+  ;;;    evaluated when the method is called, i.e. its body.
+  ;;; 2. `(name proc)' where 'NAME is the symbol upon which the method
+  ;;;    dispatches, PROC is the dispatch method.
   ;;;
   ;;; Type: (Method-Defn ...) -> Methods
   (methods* no-such-method method-defns ...))
@@ -67,9 +66,7 @@
 (define-syntax-rule (extend-methods extends method-defns ...)
   ;;; Extend EXTENDS with METHOD-DEFNS.
   ;;;
-  ;;; A METHOD-DEFN has the form `((name args...) expr)' where 'NAME is the symbol
-  ;;; upon which the method dispatches, ARGS are the arguments it accepts, and
-  ;;; EXPR is the expression evaluated when the method is called.
+  ;;; The METHOD-DEFN is the same as in the comments of the METHODS macro.
   ;;;
   ;;; Type: (U Actor Procedure) (Method-Defn ...) -> Methods
 
