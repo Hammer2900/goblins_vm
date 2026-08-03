@@ -48,11 +48,14 @@
    [(read-message unmarshallers)
     (<- io 'read
         (lambda (ip)
-         (syrup-read ip #:unmarshallers unmarshallers)))]
+          ;; OCapN messages are typically wrapped as a netstring (sans trailing
+          ;; comma). This happens to be the same as bytevector encoding in
+          ;; syrup.
+          (syrup-decode (syrup-read ip) #:unmarshallers unmarshallers)))]
    [(write-message msg marshallers)
     (<-np io 'write
           (lambda (op)
-            (syrup-write msg op #:marshallers marshallers)
+            (syrup-write (syrup-encode msg #:marshallers marshallers) op)
             (force-output op)))]))
 
 (define* (random-tmp-filename base-directory
