@@ -100,11 +100,11 @@
 (define (pseudosingle->float psing)
   (pseudosingle-float psing))
 
-(define* (write-as-netstring! port bstr #:key [joiner colon-bv])
-  (let ((bstr-len (bytevector-length bstr)))
+(define* (write-netstring! port bv #:key [joiner colon-bv])
+  (let ((bstr-len (bytevector-length bv)))
     (put-bytevector port (string->utf8 (number->string bstr-len)))
     (put-bytevector port joiner)
-    (put-bytevector port bstr)))
+    (put-bytevector port bv)))
 
 ;; alias for simplicity
 (define bytes string->utf8)
@@ -194,7 +194,7 @@
     (match obj
       ;; Bytes are like <bytes-len>:<bytes>
       [(? bytevector?)
-       (write-as-netstring! port obj)]
+       (write-netstring! port obj)]
       [0 (put-bytevector port zero-bv)]
       ;; Integers are like <integer>+ or <integer>-
       [(? exact-integer?)
@@ -221,11 +221,11 @@
       ;; Strings are like <encoded-bytes-len>"<utf8-encoded>
       [(? string?)
        (let ((encoded-string (string->utf8 obj)))
-         (write-as-netstring! port encoded-string #:joiner doublequote-bv))]
+         (write-netstring! port encoded-string #:joiner doublequote-bv))]
       ;; Symbols are like <encoded-bytes-len>'<utf8-encoded>
       [(? symbol?)
        (let ((encoded-symbol (string->utf8 (symbol->string obj))))
-         (write-as-netstring! port encoded-symbol #:joiner singlequote-bv))]
+         (write-netstring! port encoded-symbol #:joiner singlequote-bv))]
       ;; Single flonum floats are like F<big-endian-encoded-single-float>
       [($ <pseudosingle> float)
        (let ([bv (make-bytevector 4)])
@@ -299,9 +299,9 @@
      (define (return-eof)
        (return-early the-eof-object))
      (define (_read-char)
-       (match (get-u8 in-port)
+       (match (get-char in-port)
          [(? eof-object?) (return-eof)]
-         [char-int (integer->char char-int)]))
+         [char char]))
      (define (_peek-char)
        (match (peek-char in-port)
          [(? eof-object?) (return-eof)]
@@ -322,36 +322,34 @@
          [(? digit-char?)
           (let* ((type #f)
                  (int-prefix
-                  (string->number
-                   (list->string
-                    (let lp ()
-                      (match (_read-char)
+                  (let lp ((prev 0))
+                    (let ((char (_read-char)))
+                      (case char
                         ;; Oh, it's a plus... that means it's a positive
                         ;; integer.  Ok.
-                        [#\+
+                        ((#\+)
                          (set! type 'positive-int)
-                         '()]
+                         prev)
                         ;; Or the inverse for a minus.
-                        [#\-
+                        ((#\-)
                          (set! type 'negative-int)
-                         '()]
-                        [#\:
+                         prev)
+                        ((#\:)
                          (set! type 'bstr)
-                         '()]
-                        [#\'
+                         prev)
+                        ((#\')
                          (set! type 'sym)
-                         '()]
-                        [#\"
+                         prev)
+                        ((#\")
                          (set! type 'str)
-                         '()]
-                        [(? digit-char? digit-char)
-                         (cons digit-char
-                               (lp))]
-                        [other-char
-                         (error 'syrup-invalid-digit
-                                "Invalid digit at pos ~a: ~a"
-                                (file-position in-port)
-                                other-char)]))))))
+                         prev)
+                        ((#\0 #\1 #\2 #\3 #\4 #\5 #\6 #\7 #\8 #\9)
+                         (lp (+ (* prev 10) (- (char->integer char) (char->integer #\0)))))
+                      (else
+                       (error 'syrup-invalid-digit
+                              "Invalid digit at pos ~a: ~a"
+                              (file-position in-port)
+                              char)))))))
             (match type
               ;; it's positive, so just return as-is
               ['positive-int int-prefix]
