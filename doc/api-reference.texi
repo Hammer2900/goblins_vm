@@ -770,7 +770,7 @@ event loop needs (see @code{make-vat}).
 @lisp
 > (define my-vat (spawn-vat))
 > my-vat
-=> #<vat izvD0DJT>
+=> #<vat id: 0 name #f>
 @end lisp
 
 Running @code{spawn-vat} returns a vat object.  Code can be run within
@@ -783,7 +783,7 @@ is useful for bootstrapping vats or hacking at the REPL:
    (lambda ()
      (define alice (spawn ^greeter "Alice"))
      ($ alice "Bob")))
-=> "Hello Alice, my name is Bob!"
+=> "Hello Bob, my name is Alice!"
 @end lisp
 
 For convenience, the @code{with-vat} macro can be used instead of
@@ -795,7 +795,7 @@ For convenience, the @code{with-vat} macro can be used instead of
 > (with-vat my-vat
    (define alice (spawn ^greeter "Alice"))
    ($ alice "Bob"))
-=> "Hello Alice, my name is Bob!"
+=> "Hello Bob, my name is Alice!"
 @end lisp
 
 You can also use the @code{vat-halt!} procedure to stop the vat, and
