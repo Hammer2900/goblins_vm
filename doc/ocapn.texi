@@ -249,7 +249,7 @@ it and paste it in the second terminal as the argument to @code{guile
 captp-alice.scm}:
 
 @example
-guile captp-alice.scm <STURDYREF-GOES-HERE>
+guile captp-alice.scm "<STURDYREF-GOES-HERE>"
 @end example
 
 Tor Onion Services can take a while to establish, but eventually you
@@ -392,24 +392,34 @@ provide to the users, saved in @file{simple-chat-user.scm}:
 (wait done?)
 @end lisp
 
-This can be run supplying the sturdyref from the chatroom and a name
-for the user, you can even connect several users by running this
-several times and see each user's greeting come in. This is done by
-each time a new message comes in, the chatroom sends each connected
-user a message with the author (living on another machine or peer) and
-the message sent. Each user then messages the remote user the user who
-sent the message for its name and displays that.
+The client can be launched by supplying the sturdyref for the chatroom
+and a name for the user:
 
-You can see in the example we don't need to worry about what
-connections each peer has, Goblins and OCapN handle all of that for
-you. We just needed to initially bootstrap the connection, then
-references to other objects, including those from other sessions can
-be passed around in messages.
+@example
+guile simple-chat-user.scm "ocapn://..." <username>
+@end example
 
-This chat system has no authentication or security, it's just meant to
-be a demonstration of passing references around over CapTP, including
-using Third Party Handoffs for sending references from other OCapN
-sessions.
+Multiple users can be connected by launching this client several
+times.
+
+Each time the chatroom receives a message, it calls the
+@code{new-message} method on each connected client to distribute it.
+Each chatroom message contains the author (a reference to a
+@code{^user}) and the message contents.  When a client receives a
+message, it resolves the author's name by calling the @code{get-name}
+method on the object reference, which it then displays along with the
+message contents.
+
+The example programs above do not need to worry about what connections
+each peer has — Goblins and OCapN handle all of that!  Once an OCapN
+connection has been bootstrapped, references to other objects
+(including those from @emph{other} sessions) can be freely passed
+around in messages.
+
+Note that this chat system has no authentication or security.  It's
+simply a demonstration of reference passing over CapTP (including
+using Third Party Handoffs for sending references across multiple
+OCapN sessions).
 
 @node Using the CapTP API
 @section Using the CapTP API
