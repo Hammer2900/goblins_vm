@@ -324,16 +324,15 @@ Fibers details such that the user can operate mostly in a
 Goblins-oriented interface.
 
 More specific IO interfaces for files, general ports, etc will be
-provided in the future, but the mechanism provided by this library
-is general enough to fit most use cases.
+provided in the future, but the mechanism provided by this library is
+general enough to fit most use cases.
 
-@deffn {Constructor} ^io _bcom wrapped @
-                         [#:init #f] [#:cleanup #f]
+@deffn {Constructor} ^io _bcom wrapped [#:init #f] [#:cleanup #f]
 
 Spawns an object which itself spawns a Fibers fiber which wraps
-@var{wrapped}.  If @var{init} is provided with a procedure, fiber
-will invoke said procedure with @var{wrapped} as the sole argument
-before looping over any provided commands.
+@var{wrapped}.  If @var{init} is provided with a procedure, fiber will
+invoke said procedure with @var{wrapped} as the sole argument before
+looping over any provided commands.
 
 Invoking the spawned object returns a promise, and said procedure is
 executed within the managed fiber's loop.  Any return value will
@@ -341,10 +340,10 @@ fulfill as a value for the returned promise, and any exception raised
 will break the promise with said exception.
 
 If the object spawned by @var{^io} is invoked with the symbol
-@code{'halt}, the fiber will be shut down and will stop responding to
+@code{halt}, the fiber will be shut down and will stop responding to
 further incoming messages, and @var{cleanup} will be run within the
-fiber with the sole argument being @var{wrapped}.  (In the future,
-if the reference to the spawned object is garbage collected, the fiber
+fiber with the sole argument being @var{wrapped}.  (In the future, if
+the reference to the spawned object is garbage collected, the fiber
 will be automatically halted.)
 
 As an example:
@@ -375,25 +374,25 @@ Got: o
 
 @end deffn
 
-@deffn {Constructor} ^read-write-io _bcom wrapped @
-                                    [#:init #f] [#:cleanup #f]
+@deffn {Constructor} ^read-write-io _bcom wrapped [#:init #f] [#:cleanup #f]
 
-Spawn a read and write interface for running commands over WRAPPED
+Spawn a read and write interface for running commands over
+@var{wrapped}.
 
-Like the ^io object, this spawns a separate fiber which processes one
-command at a time. This however allows for both reading and writing by
-having a 'read method (taking in a procedure as its only argument),
-and a 'write method (also taking a single procedure as its only
-argument). You can read and write at the same time to the same WRAPPED
-resource without blocking the other.
+Like the @code{^io} object, this spawns a separate fiber which
+processes one command at a time. This however allows for both reading
+and writing by having a @code{read} method (taking in a procedure as
+its only argument), and a @code{write} method (also taking a single
+procedure as its only argument). You can read and write at the same
+time to the same @var{wrapped} resource without blocking the other.
 
-Like ^io, this supports a 'halt method which stops both fibers and
-runs any CLEANUP provided.
+Like @code{^io}, this actor supports a @var{halt} method which stops
+both fibers and runs any @var{cleanup} provided.
 
 @end deffn
 
-Note that currently the io actor is not persistence aware and so
-cannot appear in a persistence graph.
+Note that currently the @code{^io} actor does not support persistence
+and therefore cannot belong to a persistent vat.
 
 @node IO Ping Tutorial
 @subsection IO Ping Tutorial
