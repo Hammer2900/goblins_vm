@@ -334,10 +334,11 @@ Spawns an object which itself spawns a Fibers fiber which wraps
 invoke said procedure with @var{wrapped} as the sole argument before
 looping over any provided commands.
 
-Invoking the spawned object returns a promise, and said procedure is
-executed within the managed fiber's loop.  Any return value will
-fulfill as a value for the returned promise, and any exception raised
-will break the promise with said exception.
+Invoking the spawned object with a procedure returns a promise, and said
+procedure is executed within the managed fiber's loop with its sole
+argument being @var{wrapped}.  Any return value will fulfill as a value
+for the returned promise, and any exception raised will break the
+promise with said exception.
 
 If the object spawned by @var{^io} is invoked with the symbol
 @code{halt}, the fiber will be shut down and will stop responding to
@@ -409,8 +410,9 @@ an IP and port to connect to and spawns a socket. Its behavior is
 that it takes a message which it writes to the socket and then hands
 back a promise to the line it reads back from the socket.
 
-The original ping server in the Fibers manual can be found here:
-@uref{https://github.com/wingo/fibers/wiki/Manual#41-ping}).
+The original ping server can be found in the examples directory of
+Fibers:
+@uref{https://codeberg.org/guile/fibers/src/branch/main/examples}).
 
 The server:
 @lisp
