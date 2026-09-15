@@ -91,7 +91,7 @@ class Goblins {
       keyPairPrivateKey: (keyPair) => keyPair.privateKey,
       keyPairPublicKey: (keyPair) => keyPair.publicKey,
       exportKey: (key) => globalThis.crypto.subtle.exportKey("raw", key).then((arrBuf) => new Uint8Array(arrBuf)),
-      importPublicKey: (key) => globalThis.crypto.subtle.importKey("raw", key, { name: "Ed25519" }, true, ["verify"]),
+      importKey: (key) => globalThis.crypto.subtle.importKey("raw", key, { name: "Ed25519" }, true, ["verify"]),
       signEd25519: (data, privateKey) => globalThis.crypto.subtle.sign({ name: "Ed25519" }, privateKey, data).then((arrBuf) => new Uint8Array(arrBuf)),
       verifyEd25519: (signature, data, publicKey) => globalThis.crypto.subtle.verify({ name: "Ed25519" }, publicKey, signature, data)
     }

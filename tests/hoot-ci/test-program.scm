@@ -8,6 +8,7 @@
              (goblins ocapn ids)
              (goblins ocapn captp)
              (goblins ocapn netlayer fake)
+             (goblins ocapn netlayer noise)
              (goblins ocapn netlayer websocket)
              (goblins persistence-store memory)
              (goblins persistence-store local-storage)

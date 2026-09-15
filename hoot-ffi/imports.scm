@@ -30,6 +30,12 @@
          (gcrypt:pk-crypto:sexp->canonical-sexp
           '(genkey (eddsa (curve Ed25519)
                           (flags eddsa)))))))
+    ("generateX25519KeyPair" .
+     ,(lambda ()
+        (gcrypt:pk-crypto:generate-key
+         (gcrypt:pk-crypto:sexp->canonical-sexp
+          '(genkey (eddsa (curve x25519)
+                          (flags eddsa)))))))
     ("keyPairPrivateKey" .
      ,(lambda (keyPair)
         (gcrypt:pk-crypto:find-sexp-token
@@ -48,7 +54,7 @@
                   (q ,key)))
            key))))
     ("exportKey" . ,(lambda (key) key))
-    ("importPublicKey" .
+    ("importKey" .
      ,(lambda (key)
         (gcrypt:pk-crypto:sexp->canonical-sexp
          `(public-key

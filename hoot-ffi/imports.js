@@ -66,6 +66,11 @@ let bindings = {
             true,
             ["sign", "verify"]
         ),
+	generateX25519KeyPair: () => globalThis.crypto.subtle.generateKey(
+            { name: "X25519" },
+            true,
+            ["deriveBits"]
+        ),
         keyPairPrivateKey: (keyPair) => keyPair.privateKey,
         keyPairPublicKey: (keyPair) => keyPair.publicKey,
         exportKey: (key) => globalThis.crypto.subtle.exportKey("raw", key)
