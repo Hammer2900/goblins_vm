@@ -28,9 +28,7 @@
              (goblins actor-lib ticker)
              (goblins actor-lib timers)
              (goblins actor-lib ward)
-             (tests utils)
-             (fibers)
-             (fibers channels))
+             (tests utils))
 
 ;; Do a very brief test using the fake netlayer check CapTP
 (define vat (spawn-vat))
@@ -38,22 +36,18 @@
   (with-vat vat
     (define network (spawn ^fake-network))
 
-    (define a-new-conn-ch (make-channel))
     (define a-loc (string->ocapn-id "ocapn://a.fake"))
-    (define b-new-conn-ch (make-channel))
     (define b-loc (string->ocapn-id "ocapn://b.fake"))
 
     (define a-netlayer
-      (spawn ^fake-netlayer "a" network a-new-conn-ch))
+      (spawn-fake-netlayer network "a"))
     (define b-netlayer
-      (spawn ^fake-netlayer "b" network b-new-conn-ch))
+      (spawn-fake-netlayer network "b"))
 
     (define a-mycapn
       (spawn-mycapn a-netlayer))
     (define b-mycapn
       (spawn-mycapn b-netlayer))
-    ($ network 'register "a" a-new-conn-ch)
-    ($ network 'register "b" b-new-conn-ch)
 
     (define a-cell (spawn ^cell 'i-am-on-a))
     (define a-cell-sref ($ a-mycapn 'register a-cell 'fake))

@@ -23,8 +23,6 @@
   #:use-module (goblins actor-lib joiners)
   #:use-module (goblins actor-lib facet)
   #:use-module (tests utils)
-  #:use-module (fibers)
-  #:use-module (fibers channels)
   #:use-module (ice-9 match)
   #:use-module (srfi srfi-11)
   #:use-module (srfi srfi-64))
@@ -38,13 +36,10 @@
 
 (define (spawn-vat-in-fakenl name)
   (define new-vat (spawn-vat #:name (string-append name "-vat")))
-  (define new-conn-ch (make-channel))
   (define location (string->ocapn-id (format #f "ocapn://~a.fake" name)))
   (define netlayer
     (with-vat new-vat
-      (spawn ^fake-netlayer name fakenl-network new-conn-ch)))
-  (with-vat fakenl-vat
-    ($ fakenl-network 'register name new-conn-ch))
+      (spawn-fake-netlayer fakenl-network name)))
   (define mycapn
     (with-vat new-vat (spawn-mycapn netlayer)))
   (values new-vat location netlayer mycapn))
@@ -390,13 +385,12 @@
 ;; problems.
 (define reconnect-server-vat*
   (spawn-vat #:name "reconnect-prelay*"))
-(define reconnect-server-new-conn-ch
-  (make-channel))
+(define-values (network-vow network-resolver)
+  (call-with-vat reconnect-server-vat* spawn-promise-and-resolver))
 (define-values (reconnect-server-netlayer* reconnect-server-mycapn*)
   (let ((loc "ocapn://reconnect-prelay.fake")
         (netlayer (with-vat reconnect-server-vat*
-                    (spawn ^fake-netlayer "reconnect-prelay" fakenl-network
-                          reconnect-server-new-conn-ch))))
+                    (spawn-fake-netlayer network-vow "reconnect-prelay"))))
     (with-vat reconnect-server-vat*
       (values netlayer
               (spawn-mycapn netlayer)))))
@@ -405,9 +399,8 @@
   (with-vat reconnect-server-vat*
     (on halted-server-netlayer?
         (lambda _
-          ;; We're ready to clobber, install ourselves in the network as "reconnect-prelay"
-          (<-np fakenl-network 'register "reconnect-prelay" reconnect-server-new-conn-ch)
-
+          ;; We're ready so we can finish hooking up the rest of the netlayer.
+          ($ network-resolver 'fulfill fakenl-network)
           ;; As we cannot restart the netlayer, we need to make a new one and install
           ;; the endpoint and controller at the same place we had them before.
           (define-values (reconnect-endpoint* reconnect-controller*)
