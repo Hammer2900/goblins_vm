@@ -22,8 +22,6 @@
   #:use-module (goblins actor-lib facet)
   #:use-module (goblins actor-lib joiners)
   #:use-module (tests utils)
-  #:use-module (fibers)
-  #:use-module (fibers channels)
   #:use-module (ice-9 match)
   #:use-module (srfi srfi-64))
 
@@ -38,12 +36,7 @@
   (spawn-vat #:name "prelay server"))
 (define prelay-server-fake-netlayer
   (with-vat prelay-server-vat
-    (let ((new-conn-ch (make-channel)))
-      (<-np fake-network 'register "prelay-server-fake" new-conn-ch)
-      (spawn ^fake-netlayer
-             "prelay-server-fake"
-             fake-network
-             new-conn-ch))))
+    (spawn-fake-netlayer fake-network "prelay-server-fake")))
 
 (define prelay-admin
   (with-vat prelay-server-vat
@@ -77,12 +70,6 @@
   (lambda (your-name)
     (format #f "Hello ~a, my name is ~a!" your-name my-name)))
 
-(define (spawn-fake-netlayer name)
-  (let* ((new-conn-ch (make-channel))
-         (netlayer (spawn ^fake-netlayer name fake-network new-conn-ch)))
-    (<-np fake-network 'register name new-conn-ch)
-    netlayer))
-
 ;; Setup alice's end
 (define alice-vat
   (spawn-vat #:name "alice"))
@@ -90,7 +77,7 @@
   (with-vat alice-vat
     (fetch-and-spawn-prelay-netlayer
      alice-account-activate-sref
-     #:netlayer (spawn-fake-netlayer "alice"))))
+     #:netlayer (spawn-fake-netlayer fake-network "alice"))))
 (define alice-prelay-mycapn-vow
   (with-vat alice-vat
     (on alice-prelay-netlayer-vow
@@ -125,7 +112,7 @@
   (with-vat bob-vat
     (fetch-and-spawn-prelay-netlayer
      bob-account-activate-sref
-     #:netlayer (spawn-fake-netlayer "bob"))))
+     #:netlayer (spawn-fake-netlayer fake-network "bob"))))
 (define bob-prelay-mycapn-vow
   (with-vat bob-vat
     (on bob-prelay-netlayer-vow

@@ -28,7 +28,6 @@
   #:use-module (goblins ocapn captp-types)
   #:use-module (goblins ocapn netlayer fake)
   #:use-module (tests utils)
-  #:use-module (fibers channels)
   #:use-module (ice-9 match)
   #:use-module (srfi srfi-64))
 
@@ -37,13 +36,9 @@
 (define (make-new-peer name)
   "Create a new vat, spawns a fake netlayer & mycapn for given `name'"
   (define peer-vat (spawn-vat #:name name))
-  (define new-conn-ch (make-channel))
-  (with-vat test-vat
-    ($ test-network 'register name new-conn-ch))
-  (define location (make-ocapn-peer 'fake name #f))
   (define netlayer
     (with-vat peer-vat
-     (spawn ^fake-netlayer name test-network new-conn-ch)))
+     (spawn-fake-netlayer test-network name)))
   (define mycapn
     (with-vat peer-vat
      (spawn-mycapn netlayer)))
@@ -427,9 +422,7 @@
   ($ a-netlayer 'halt))
 
 (with-vat a-vat
-  (define new-conn-ch (make-channel))
-  (<-np test-network 'register "a" new-conn-ch)
-  (let ((netlayer (spawn ^fake-netlayer "a" test-network new-conn-ch)))
+  (let ((netlayer (spawn-fake-netlayer test-network "a")))
     (set! a-netlayer netlayer)
     (set! a-mycapn (spawn-mycapn netlayer)))
   ;; Now re-install the echo actor into the swiss-num we had before
