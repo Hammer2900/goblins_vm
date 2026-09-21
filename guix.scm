@@ -94,10 +94,10 @@
             (method git-fetch)
             (uri (git-reference
                   (url "https://codeberg.org/spritely/guile-noise-protocol.git")
-                  (commit "5aad5c34908c18eff2f1bd203ae56b5d90bd906d")))
+                  (commit "636df51535d6e4925b8c93a71e52556a6ec90445")))
             (sha256
              (base32
-              "1z4093whcw78nf6aqm0wnv001iqinziaglyrwyak5gn6sgdh4dn2"))))
+              "0w8psrji4ws54xng41ryffa62ha44aj9njfg56hwah56bc7b38b9"))))
    (build-system gnu-build-system)
    (arguments
     `(#:phases

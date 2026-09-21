@@ -46,8 +46,14 @@
     (define noise-netlayer
       (spawn ^noise-netlayer tcp-tls-netlayer))
     (spawn-mycapn noise-netlayer)))
+(define remote-cell-vow
+  (with-vat vat-b (<- b-mycapn 'enliven a-cell-sref)))
 (with-vat vat-b
-  (on (<- b-mycapn 'enliven a-cell-sref)
+  (on remote-cell-vow
       (lambda (remote-cell)
         (format #t "remote-cell: ~a" remote-cell))))
+(with-vat vat-b
+  (on (<- remote-cell-vow)
+      (lambda (contents)
+        (format #t "Cell contains: ~a" contents))))
 (sleep 5)
