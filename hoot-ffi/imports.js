@@ -66,11 +66,34 @@ let bindings = {
             true,
             ["sign", "verify"]
         ),
-	generateX25519KeyPair: () => globalThis.crypto.subtle.generateKey(
+        generateX25519KeyPair: () => globalThis.crypto.subtle.generateKey(
             { name: "X25519" },
             true,
             ["deriveBits"]
         ),
+        deriveX25519Bits: (privateKey, publicKey, length) => globalThis.crypto
+            .subtle.deriveBits(
+                { name: "x25519", public: publicKey },
+                privateKey,
+                length
+            ).then((arrBuf) => new Uint8Array(arrBuf)),
+        importHMACKey: (hash, data) => globalThis.crypto.subtle.importKey(
+            "raw",
+            data,
+            { name: "HMAC", hash},
+            true,
+            ["sign"]
+        ),
+	    encrypt: (key, nonce, ad, data) => globalThis.crypto.subtle.encrypt(
+            { name: "AES-GCM", iv: nonce, additionalData: ad},
+            key,
+            data
+        ).then((arrBuf) => new Uint8Array(arrBuf)),
+	    decrypt: (key, nonce, ad, data) => globalThis.crypto.subtle.decrypt(
+            { name: "AES-GCM", iv: nonce, additionalData: ad},
+            key,
+            data
+        ).then((arrBuf) => new Uint8Array(arrBuf)),
         keyPairPrivateKey: (keyPair) => keyPair.privateKey,
         keyPairPublicKey: (keyPair) => keyPair.publicKey,
         exportKey: (key) => globalThis.crypto.subtle.exportKey("raw", key)
@@ -93,7 +116,14 @@ let bindings = {
                 publicKey,
                 signature,
                 data
-            )
+            ),
+        importKey: (key, format, kind, use) => globalThis.crypto.subtle.importKey(
+            format,
+            key,
+            { name: kind },
+            true,
+            use === "" ? [] : [use]
+          )
     },
     indexedDB: {
         dbOpen: (name, upgrade) => new Promise((resolve, reject) => {
