@@ -83,7 +83,6 @@ SOURCES = goblins.scm \
           goblins/ocapn/ids.scm \
           goblins/ocapn/netlayer/base-port.scm \
           goblins/ocapn/netlayer/fake.scm \
-          goblins/ocapn/netlayer/noise.scm \
           goblins/ocapn/netlayer/websocket.scm \
           goblins/ocapn/netlayer/websocket-utils.scm \
           goblins/ocapn/netlayer/onion-socks.scm \
@@ -145,7 +144,6 @@ TESTS = tests/actor-lib/test-cell.scm \
         tests/test-migrations.scm \
         tests/ocapn/test-captp.scm \
         tests/ocapn/netlayer/test-fake.scm \
-        tests/ocapn/netlayer/test-noise.scm \
         tests/ocapn/netlayer/test-websocket.scm \
         tests/ocapn/netlayer/test-libp2p.scm \
         tests/ocapn/netlayer/test-prelay.scm \
@@ -175,6 +173,11 @@ SOURCES += goblins/ocapn/netlayer/unix-domain-socket.scm \
            goblins/utils/unix-domain-socket.scm \
            goblins/utils/unix-domain-socket-server.scm
 TESTS += tests/ocapn/netlayer/test-unix-domain-socket.scm
+endif
+
+if HAVE_GUILE_NOISE
+SOURCES += goblins/ocapn/netlayer/noise.scm
+TESTS += tests/ocapn/netlayer/test-noise.scm
 endif
 
 TEST_EXTENSIONS = .scm
@@ -213,6 +216,7 @@ run-tests:
 EXAMPLES = examples/cauldron.scm		\
            examples/try-captp-onion.scm		\
            examples/try-base-netlayer.scm	\
+           examples/try-noise.scm \
            examples/prelay-server.scm \
            examples/unix-domain-socket-server.scm
 

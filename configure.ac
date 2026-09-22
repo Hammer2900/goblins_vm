@@ -42,6 +42,10 @@ dnl Guile-bstructs is needed for Unix domain socket netlayer support.
 GUILE_MODULE_AVAILABLE([have_guile_bstructs], [(bstructs)])
 AM_CONDITIONAL([HAVE_GUILE_BSTRUCTS], [test "x$have_guile_bstructs" = "xyes"])
 
+dnl Guile-noise-protocol is needed for the Noise netlayer.
+GUILE_MODULE_AVAILABLE([have_guile_noise], [(noise)])
+AM_CONDITIONAL([HAVE_GUILE_NOISE], [test "x$have_guile_noise" = "xyes"])
+
 dnl Hoot is optional.
 GUILE_MODULE_AVAILABLE([have_hoot], [(hoot compile)])
 AM_CONDITIONAL([HAVE_HOOT], [test "x$have_hoot" = "xyes"])

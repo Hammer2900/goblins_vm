@@ -16,6 +16,7 @@
   #:use-module (goblins define-actor)
   #:use-module (goblins actor-lib inbox)
   #:use-module (goblins actor-lib methods)
+  #:use-module (goblins actor-lib on)
   #:use-module (goblins ocapn ids)
   #:use-module (goblins ocapn captp)
   #:use-module (goblins ocapn netlayer base-port)
@@ -35,9 +36,6 @@
 (define (ocapn-peer->key ocapn-peer)
   (base32-decode (ocapn-peer-designator ocapn-peer)))
 
-(define (static-key->swiss-num static-key)
-  (sha256 static-key))
-
 (define* (spawn-noise-connection our-static-keypair initiator? our-outbox
                                  #:optional
                                  remote-side-key)
@@ -56,11 +54,8 @@
   (define (^message-io bcom encrypt decrypt)
     (methods
      ((read-message unmarshallers)
-      (on (<- our-inbox)
-          (lambda (encrypted-msg)
-            (define msg (decrypt encrypted-msg))
-            (syrup-decode msg #:unmarshallers unmarshallers))
-          #:promise? #t))
+      (let-on ((encrypted-msg (<- our-inbox)))
+        (syrup-decode (decrypt encrypted-msg) #:unmarshallers unmarshallers)))
      ((write-message msg marshallers)
       (define encoded-msg (syrup-encode msg #:marshallers marshallers))
       (<-np our-outbox (encrypt encoded-msg)))))
@@ -78,13 +73,12 @@
     (spawn ^message-io encrypt decrypt))
 
   (define (read-next-handshake-message)
-    (on (<- our-inbox)
-        (lambda (msg)
-          (define-values (_msg c1 c2)
-            (read-msg! msg))
-          (if (and c1 c2)
-              (<-np message-io-resolver 'fulfill (spawn-message-io c1 c2))
-              (write-handshake-message!)))))
+    (let-on ((msg (<- our-inbox)))
+      (define-values (_msg c1 c2)
+        (read-msg! msg))
+      (if (and c1 c2)
+          (<-np message-io-resolver 'fulfill (spawn-message-io c1 c2))
+          (write-handshake-message!))))
 
   (define (write-handshake-message!)
     (define-values (msg c1 c2) (write-msg!))
@@ -105,7 +99,6 @@
 ;; one for our purposes. We want it so that the ^noise-netlayer can communicate
 ;; the connection establisher to the ^noise-connector.
 (define-actor (^promise-cell bcom)
-  #:portrait (lambda () '())
   (define-values (vow resolver)
     (spawn-promise-and-resolver))
   (methods
@@ -128,44 +121,46 @@
   (define conn-establisher-promise-cell (spawn ^promise-cell))
   (define noise-connector
     (spawn ^noise-connector static-keypair conn-establisher-promise-cell))
-  (spawn ^noise-netlayer* name mycapn netlayer static-keypair
-         conn-establisher-promise-cell
-         noise-connector))
+  (spawn ^noise-netlayer* name mycapn netlayer public-key
+         conn-establisher-promise-cell noise-connector))
 
 (define-actor (^noise-netlayer* bcom name mycapn netlayer static-keypair
                                 shared-conn-establisher
                                 noise-connector)
-  (define-values (our-private-key our-public-key)
-    (match static-keypair
-      ((private . public) (values private public))))
-
-  (define swiss-num (static-key->swiss-num our-public-key))
+  (define our-public-key (cdr static-keypair))
+  (define swiss-num (sha256 our-public-key))
   (define nonce-registry (<- mycapn 'get-registry))
   (<-np nonce-registry 'register noise-connector swiss-num)
   (define our-location-vow
-    (on (<- netlayer 'our-location)
-        (lambda (transport-location)
-          (define noise-connector-sref
-            (make-ocapn-sturdyref transport-location swiss-num))
-          (make-ocapn-peer
-           name
-           (base32-encode (car static-keypair))
-           (hashmap ("connector" (ocapn-id->string noise-connector-sref)))))
-        #:promise? #t))
+    (let-on ((transport-location (<- netlayer 'our-location)))
+      (make-ocapn-peer
+       name
+       ;; Designator is the our static public key base32 encoded.
+       (base32-encode our-public-key)
+       ;; Hints are a swiss-num of the transport netlayer pointing to the noise
+       ;; connector actor. This allows other peers to connect to us.
+       (let ((connector-sref (make-ocapn-sturdyref transport-location swiss-num)))
+         (hashmap ("connector" (ocapn-id->string connector-sref)))))))
 
   (methods
    ((netlayer-name) 'noise)
    ((our-location) our-location-vow)
    ((self-location? location)
-    (on our-location-vow
-        (lambda (our-location)
-          (same-peer-location? our-location location))
-        #:promise? #t))
+    (let-on ((our-location our-location-vow))
+      (same-peer-location? our-location location)))
    ((setup conn-establisher)
     (<-np shared-conn-establisher 'fulfill conn-establisher))
    ((connect-to remote-peer)
-    ;; Spawn the noise connection objects. We don't have our outbox until we
-    ;; tell the otherside, so for now use a promise.
+    ;; To create a new connection we'll use spawn-noise-connection which spawns
+    ;; some inbox actors to allow the otherside to deliver messages and sets up
+    ;; everything to allow for the Noise handshake to occur and then encryption
+    ;; and decryption of messages.
+    ;; We'll then reach out to the other side's ^noise-connector (a sort of
+    ;; bootstrap actor) and hand them an outbox actor where it can send messages
+    ;; meant for us. It'll setup it's own inbox and Noise machinary.
+    ;; Since spawn-noise-connection takes an outbox to deliver messages to,
+    ;; we'll spawn a promise, and fulfill it with the outbox when we've sent
+    ;; message to the remote ^noise-connector.
     (define-values (our-outbox-vow our-outbox-resolver)
       (spawn-promise-and-resolver))
     (define remote-side-key (ocapn-peer->key remote-peer))
@@ -179,15 +174,11 @@
        (hashmap-ref (ocapn-peer-hints remote-peer) "connector")))
     (define remote-connector-vow
       (<- mycapn 'enliven remote-noise-connector-sref))
-    (on (<- remote-connector-vow their-outbox)
-        (lambda (our-outbox)
-          (<-np our-outbox-resolver 'fulfill our-outbox)
-          (define conn-establisher-vow (<- shared-conn-establisher 'current-value))
-          (<- conn-establisher-vow message-io remote-peer))
-        #:catch
-        (lambda (err)
-          (<-np our-outbox-resolver 'break err))
-        #:promise? #t))))
+    (<-np our-outbox-resolver 'fulfill (<- remote-connector-vow their-outbox))
+    (let-on ((our-outbox (<- remote-connector-vow their-outbox)))
+      (define conn-establisher-vow
+        (<- shared-conn-establisher 'current-value))
+      (<- conn-establisher-vow message-io remote-peer)))))
 
 (define noise-netlayer-env
   (persistence-env-compose

@@ -58,7 +58,7 @@
 (define guile-gnutls*
   (let ((commit "dd4897fff79364692968295a114e8552c4c4fc71"))
     (package
-     (inherit gnutls)
+     (inherit guile-gnutls)
      (version (string-append (package-version guile-gnutls)
                              "-" (string-take commit 7)))
      (source (origin
@@ -68,23 +68,8 @@
                     (commit commit)))
               (sha256
                (base32
-                "0iqji4yf02a3981lhla44ia0na4cj6shf5c3850n47k90hcjscv1"))))
-     (arguments
-      (list
-       #:configure-flags
-       ;; Tell the build system that we want Guile bindings installed to the
-       ;; output instead of Guiles own module directory.
-       #~(list "--disable-static"
-              (string-append "--with-guile-site-dir="
-                             "$(datarootdir)/guile/site/$(GUILE_EFFECTIVE_VERSION)")
-              (string-append "--with-guile-site-ccache-dir="
-                             "$(libdir)/guile/$(GUILE_EFFECTIVE_VERSION)/site-ccache")
-              (string-append "--with-guile-extension-dir="
-                             "$(libdir)/guile/$(GUILE_EFFECTIVE_VERSION)/extensions"))))
-     (inputs (append (list (list "autoconf" autoconf)
-                           (list "automake" automake)
-                           (list "libtool" libtool))
-                     (package-inputs guile-gnutls))))))
+                "0iqji4yf02a3981lhla44ia0na4cj6shf5c3850n47k90hcjscv1")))))))
+
 
 (define guile-noise-protocol
   (package
@@ -94,27 +79,20 @@
             (method git-fetch)
             (uri (git-reference
                   (url "https://codeberg.org/spritely/guile-noise-protocol.git")
-                  (commit "636df51535d6e4925b8c93a71e52556a6ec90445")))
+                  (commit "3e48fee31e7d81257b650e19807630a8007254ff")))
             (sha256
              (base32
-              "0w8psrji4ws54xng41ryffa62ha44aj9njfg56hwah56bc7b38b9"))))
+              "092ma9wwhaz45cfrgj4r8h7hcc5dhi48x3rln5b8b7ahn2xpz076"))))
    (build-system gnu-build-system)
-   (arguments
-    `(#:phases
-      (modify-phases %standard-phases
-      (replace 'bootstrap
-        (lambda _
-          (invoke "autoreconf" "-vif"))))
-      #:make-flags
-      ,#~(list "GUILE_AUTO_COMPILE=0")))
-  (native-inputs (list autoconf automake pkg-config))
-  (inputs (list guile-next guile-hoot*))
-  (propagated-inputs
-   (list guile-gnutls* node python python-cryptography))
-  (synopsis "Guile implementation of the Noise Protocol")
-  (description "Guile implementation of the Noise Protocol")
-  (home-page "https://codeberg.org/spritely/guile-noise-protocol")
-  (license license:asl2.0)))
+   (native-inputs (list autoconf automake pkg-config))
+   (inputs (list guile-next guile-hoot*
+                 ;; Only needed to run test suite (make check)
+                 node python python-cryptography))
+   (propagated-inputs (list guile-gnutls*))
+   (synopsis "Guile implementation of the Noise Protocol")
+   (description "Guile implementation of the Noise Protocol")
+   (home-page "https://codeberg.org/spritely/guile-noise-protocol")
+   (license license:asl2.0)))
 
 (package
   (name "guile-goblins")
