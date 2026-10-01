@@ -121,13 +121,13 @@
   (define conn-establisher-promise-cell (spawn ^promise-cell))
   (define noise-connector
     (spawn ^noise-connector static-keypair conn-establisher-promise-cell))
-  (spawn ^noise-netlayer* name mycapn netlayer public-key
+  (spawn ^noise-netlayer* name mycapn netlayer static-keypair
          conn-establisher-promise-cell noise-connector))
 
 (define-actor (^noise-netlayer* bcom name mycapn netlayer static-keypair
                                 shared-conn-establisher
                                 noise-connector)
-  (define our-public-key (cdr static-keypair))
+  (define our-public-key (car static-keypair))
   (define swiss-num (sha256 our-public-key))
   (define nonce-registry (<- mycapn 'get-registry))
   (<-np nonce-registry 'register noise-connector swiss-num)
@@ -143,7 +143,7 @@
          (hashmap ("connector" (ocapn-id->string connector-sref)))))))
 
   (methods
-   ((netlayer-name) 'noise)
+   ((netlayer-name) name)
    ((our-location) our-location-vow)
    ((self-location? location)
     (let-on ((our-location our-location-vow))
