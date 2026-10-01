@@ -12,6 +12,7 @@
 ;;; See the License for the specific language governing permissions and
 ;;; limitations under the License.
 (use-modules (ice-9 match)
+             (rnrs bytevectors)
              (goblins)
              (goblins ocapn ids)
              (goblins ocapn captp)
@@ -61,6 +62,19 @@
   (match (resolve-vow-and-return-result a-vat (lambda () a-cell-sref))
     (#(ok cell-sref) (string? (ocapn-id->string cell-sref)))
     (_ #f)))
+
+;; Noise messages must be 65519 bytes long. The noise netlayer chunks messages
+;; over this size, lets check chunking. We'll set the value of our cell to be
+;; a really large bytevector, and then read it back which will pass it over
+;; OCapN twice!
+(define our-long-bv (make-bytevector (* 65519 12) 0))
+(test-equal "Check noise supports sending a large value"
+  (vector 'ok our-long-bv)
+  (resolve-vow-and-return-result
+   b-vat
+   (lambda ()
+     (<-np remote-cell our-long-bv)
+     (<- remote-cell))))
 
 ;; Test aurie + noise
 ;; The main thing we're testing here is persistent sturdyrefs by the noise

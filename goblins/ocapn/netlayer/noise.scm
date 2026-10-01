@@ -26,15 +26,58 @@
   #:use-module (goblins utils crypto)
   #:use-module (goblins contrib syrup)
   #:use-module (rnrs bytevectors)
+  #:use-module (rnrs bytevectors gnu)
   #:use-module (ice-9 match)
   #:use-module (noise)
   #:export (^noise-netlayer
             noise-netlayer-env))
 
 (define noise-protocol-name "Noise_XK_25519_AESGCM_SHA256")
+;; https://noiseprotocol.org/noise.html#message-format
+;; Messages must be 65535 or less, it always have 16b of authentication data
+(define noise-max-chunk-size (- 65535 16))
 
 (define (ocapn-peer->key ocapn-peer)
   (base32-decode (ocapn-peer-designator ocapn-peer)))
+
+;; Strigine hack, it's pretty slow. (see hoot issue #920)
+(cond-expand
+ (guile)
+ (hoot
+  (define (bytevector-slice bv offset size)
+    ;; Obviously this is not a "view" into bv, changing bv won't change this.
+    ;; We're using it because it's fast
+    (define new-bv (make-bytevector size))
+    (bytevector-copy! bv offset new-bv 0 size)
+    new-bv)))
+
+(define (noise-chunk-and-encrypt encrypt plaintext-bv)
+  (define bv-length (bytevector-length plaintext-bv))
+  (if (< bv-length noise-max-chunk-size)
+      (encrypt plaintext-bv)
+      (cons
+       bv-length
+       (let lp ((i 0))
+         (if (< i bv-length)
+             (let* ((k (min (- bv-length i) noise-max-chunk-size)))
+               (cons (encrypt (bytevector-slice plaintext-bv i k))
+                     (lp (+ i k))))
+             '())))))
+
+(define (noise-decrypt-chunks decrypt message)
+  (match message
+    ((? bytevector?) (decrypt message))
+    ((length-prefix . chunks)
+     (let ((bv (make-bytevector length-prefix)))
+       (let lp ((index 0)
+                (remaining chunks))
+         (match remaining
+           (() bv)
+           ((next-chunk . rest)
+            (let* ((decrypted (decrypt next-chunk))
+                   (decrypted-length (bytevector-length decrypted)))
+              (bytevector-copy! decrypted 0 bv index decrypted-length)
+              (lp (+ index decrypted-length) rest)))))))))
 
 (define* (spawn-noise-connection our-static-keypair initiator? our-outbox
                                  #:optional
@@ -55,10 +98,11 @@
     (methods
      ((read-message unmarshallers)
       (let-on ((encrypted-msg (<- our-inbox)))
-        (syrup-decode (decrypt encrypted-msg) #:unmarshallers unmarshallers)))
+        (syrup-decode (noise-decrypt-chunks decrypt encrypted-msg)
+                      #:unmarshallers unmarshallers)))
      ((write-message msg marshallers)
       (define encoded-msg (syrup-encode msg #:marshallers marshallers))
-      (<-np our-outbox (encrypt encoded-msg)))))
+      (<-np our-outbox (noise-chunk-and-encrypt encrypt encoded-msg)))))
 
   ;; Handshake helpers
   (define (spawn-message-io c1 c2)
