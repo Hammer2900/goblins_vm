@@ -38,7 +38,7 @@
             (list ".git" ".dir-locals.el" "guix.scm"))))
 
 (define guile-hoot*
-  (let ((commit "fb5213ef8d2889e8d06b4d786b94d06920990750")
+  (let ((commit "28de0a2b669b629447f39806694525fa19171c08")
         (revision "1"))
     (package
       (inherit guile-hoot)
@@ -51,7 +51,7 @@
                        (commit commit)))
                 (sha256
                  (base32
-                  "1dz33gjwmvfqhybpk44g1wpdz0cxkxbw5x0ka2bl90l3jl9yqfhy"))))
+                  "0wpmpw27kn49d0g3ys0gzzinxlifrfhbq709aqbbqzb8i9ar6ln5"))))
       (arguments
        (append (package-arguments guile-hoot) (list #:tests? #f))))))
 
@@ -79,10 +79,10 @@
             (method git-fetch)
             (uri (git-reference
                   (url "https://codeberg.org/spritely/guile-noise-protocol.git")
-                  (commit "3e48fee31e7d81257b650e19807630a8007254ff")))
+                  (commit "b5e1d0e4bc06360dc0b3af2a892f7aa7404418ce")))
             (sha256
              (base32
-              "092ma9wwhaz45cfrgj4r8h7hcc5dhi48x3rln5b8b7ahn2xpz076"))))
+              "03h7i2yynvrk9lx4fvi4y0x4pcbpb5kl3iifmaija3gvqjhxybvg"))))
    (build-system gnu-build-system)
    (native-inputs (list autoconf automake pkg-config))
    (inputs (list guile-next guile-hoot*

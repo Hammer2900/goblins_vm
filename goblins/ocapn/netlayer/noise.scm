@@ -33,9 +33,6 @@
             noise-netlayer-env))
 
 (define noise-protocol-name "Noise_XK_25519_AESGCM_SHA256")
-;; https://noiseprotocol.org/noise.html#message-format
-;; Messages must be 65535 or less, it always have 16b of authentication data
-(define noise-max-chunk-size (- 65535 16))
 
 (define (ocapn-peer->key ocapn-peer)
   (base32-decode (ocapn-peer-designator ocapn-peer)))
@@ -52,6 +49,9 @@
     new-bv)))
 
 (define (noise-chunk-and-encrypt encrypt plaintext-bv)
+  ;; https://noiseprotocol.org/noise.html#message-format
+  ;; Messages must be 65535 or less, it always have 16b of authentication data
+  (define noise-max-chunk-size (- 65535 16))
   (define bv-length (bytevector-length plaintext-bv))
   (if (< bv-length noise-max-chunk-size)
       (encrypt plaintext-bv)
@@ -59,12 +59,12 @@
        bv-length
        (let lp ((i 0))
          (if (< i bv-length)
-             (let* ((k (min (- bv-length i) noise-max-chunk-size)))
+             (let ((k (min (- bv-length i) noise-max-chunk-size)))
                (cons (encrypt (bytevector-slice plaintext-bv i k))
                      (lp (+ i k))))
              '())))))
 
-(define (noise-decrypt-chunks decrypt message)
+(define (noise-decrypt-and-dechunk decrypt message)
   (match message
     ((? bytevector?) (decrypt message))
     ((length-prefix . chunks)
@@ -98,7 +98,7 @@
     (methods
      ((read-message unmarshallers)
       (let-on ((encrypted-msg (<- our-inbox)))
-        (syrup-decode (noise-decrypt-chunks decrypt encrypted-msg)
+        (syrup-decode (noise-decrypt-and-dechunk decrypt encrypted-msg)
                       #:unmarshallers unmarshallers)))
      ((write-message msg marshallers)
       (define encoded-msg (syrup-encode msg #:marshallers marshallers))
