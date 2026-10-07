@@ -17,12 +17,15 @@
   (guix build-system gnu)
   (gnu packages)
   (gnu packages autotools)
+  (gnu packages code)
+  (gnu packages graphviz)
   (gnu packages gnupg)
   (gnu packages guile)
   (gnu packages guile-xyz)
   (gnu packages pkg-config)
   (gnu packages texinfo)
   (gnu packages tls)
+  (gnu packages tor)
   ((guix licenses) #:prefix license:)
   (srfi srfi-1))
 
@@ -47,8 +50,11 @@
      #:make-flags
      ,#~(list "GUILE_AUTO_COMPILE=0")))
   (native-inputs
-   (list autoconf automake pkg-config texinfo))
-  (inputs (list guile-next guile-hoot))
+   (list autoconf automake pkg-config texinfo
+         ;; Technically not needed for building or running goblins but they're
+         ;; useful to have around for development.
+         guile-lib guile-syntax-highlight lcov tor))
+  (inputs (list graphviz guile-next guile-hoot))
   (propagated-inputs
    (list guile-fibers guile-gnutls guile-websocket guile-bstructs))
   (synopsis "Transactional, distributed object programming environment")

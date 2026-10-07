@@ -56,7 +56,7 @@ jobs:
           timeout 60 bash -c "while [ ! -s $GOBLINS_OCAPN_PEER_LOCATOR ]; do sleep 1; done" || { echo "Goblins didn't start netlayer"; exit 1; }
           python3 ./test_runner.py --captp-version=1.0 "$(cat $GOBLINS_OCAPN_PEER_LOCATOR)"
           rm $GOBLINS_OCAPN_PEER_LOCATOR
-        shell: guix shell -m manifest.scm python python-cryptography python-stem -- {0}
+        shell: guix shell -Df guix.scm python python-cryptography python-stem -- {0}
         working-directory: goblins
         timeout-minutes: 15
   basic-hoot-check:
@@ -68,6 +68,6 @@ jobs:
           ./bootstrap.sh
           ./configure
           make tests/hoot-ci/test-program.wasm
-        shell: guix shell -m manifest.scm guile-next guile-hoot -- {0}
+        shell: guix shell -Df guix.scm guile-next guile-hoot -- {0}
         working-directory: src
         timeout-minutes: 15

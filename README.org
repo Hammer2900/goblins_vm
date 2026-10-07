@@ -80,7 +80,7 @@ Now we can use =guix shell= to make a useful environment for us to
 hack in, then run the autotools stuff.
 
 #+BEGIN_SRC sh
-  guix shell -m manifest.scm
+  guix shell
   # In the guix environment, run:
   ./bootstrap.sh && ./configure && make check
 #+END_SRC

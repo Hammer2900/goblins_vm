@@ -226,7 +226,6 @@ EXTRA_DIST += README.org \
               bootstrap.sh \
               guix.scm \
               coverage.scm \
-              manifest.scm \
               live-guile.sh \
               build-aux/test-driver.scm \
               build-aux/run-test-suite.scm \
