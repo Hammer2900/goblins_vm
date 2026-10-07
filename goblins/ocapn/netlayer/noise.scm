@@ -48,25 +48,25 @@
     (bytevector-copy! bv offset new-bv 0 size)
     new-bv)))
 
-(define (noise-chunk-and-encrypt encrypt plaintext-bv)
+(define (noise-chunk-and-encrypt noise plaintext-bv)
   ;; https://noiseprotocol.org/noise.html#message-format
   ;; Messages must be 65535 or less, it always have 16b of authentication data
   (define noise-max-chunk-size (- 65535 16))
   (define bv-length (bytevector-length plaintext-bv))
   (if (< bv-length noise-max-chunk-size)
-      (encrypt plaintext-bv)
+      (noise-encode noise plaintext-bv)
       (cons
        bv-length
        (let lp ((i 0))
          (if (< i bv-length)
              (let ((k (min (- bv-length i) noise-max-chunk-size)))
-               (cons (encrypt (bytevector-slice plaintext-bv i k))
+               (cons (noise-encode noise (bytevector-slice plaintext-bv i k))
                      (lp (+ i k))))
              '())))))
 
-(define (noise-decrypt-and-dechunk decrypt message)
+(define (noise-decrypt-and-dechunk noise message)
   (match message
-    ((? bytevector?) (decrypt message))
+    ((? bytevector?) (noise-decode noise message))
     ((length-prefix . chunks)
      (let ((bv (make-bytevector length-prefix)))
        (let lp ((index 0)
@@ -74,7 +74,7 @@
          (match remaining
            (() bv)
            ((next-chunk . rest)
-            (let* ((decrypted (decrypt next-chunk))
+            (let* ((decrypted (noise-decode noise next-chunk))
                    (decrypted-length (bytevector-length decrypted)))
               (bytevector-copy! decrypted 0 bv index decrypted-length)
               (lp (+ index decrypted-length) rest)))))))))
@@ -86,49 +86,34 @@
   (define-values (our-inbox their-outbox stop-inbox!)
     (spawn-inbox))
 
-  (define-values (write-msg! read-msg! %encrypt %decrypt)
-    (make-noise-connection noise-protocol-name initiator?
-                           #:s our-static-keypair
-                           #:rs remote-side-key))
+  (define noise (make-noise noise-protocol-name initiator?
+                            #:static-key our-static-keypair
+                            #:remote-static-key remote-side-key))
 
   (define-values (message-io-vow message-io-resolver)
     (spawn-promise-and-resolver))
 
-  (define (^message-io bcom encrypt decrypt)
+  (define (^message-io bcom)
     (methods
      ((read-message unmarshallers)
       (let-on ((encrypted-msg (<- our-inbox)))
-        (syrup-decode (noise-decrypt-and-dechunk decrypt encrypted-msg)
+        (syrup-decode (noise-decrypt-and-dechunk noise encrypted-msg)
                       #:unmarshallers unmarshallers)))
      ((write-message msg marshallers)
       (define encoded-msg (syrup-encode msg #:marshallers marshallers))
-      (<-np our-outbox (noise-chunk-and-encrypt encrypt encoded-msg)))))
-
-  ;; Handshake helpers
-  (define (spawn-message-io c1 c2)
-    (define-values (encrypt-cs decrypt-cs)
-      (if initiator?
-          (values c1 c2)
-          (values c2 c1)))
-    (define (encrypt msg)
-      (%encrypt encrypt-cs msg))
-    (define (decrypt msg)
-      (%decrypt decrypt-cs msg))
-    (spawn ^message-io encrypt decrypt))
+      (<-np our-outbox (noise-chunk-and-encrypt noise encoded-msg)))))
 
   (define (read-next-handshake-message)
     (let-on ((msg (<- our-inbox)))
-      (define-values (_msg c1 c2)
-        (read-msg! msg))
-      (if (and c1 c2)
-          (<-np message-io-resolver 'fulfill (spawn-message-io c1 c2))
+      (noise-decode noise msg)
+      (if (noise-handshake-complete? noise)
+          (<-np message-io-resolver 'fulfill (spawn ^message-io))
           (write-handshake-message!))))
 
   (define (write-handshake-message!)
-    (define-values (msg c1 c2) (write-msg!))
-    (<-np our-outbox msg)
-    (if (and c1 c2)
-        (<-np message-io-resolver 'fulfill (spawn-message-io c1 c2))
+    (<-np our-outbox (noise-encode noise #vu8()))
+    (if (noise-handshake-complete? noise)
+        (<-np message-io-resolver 'fulfill (spawn ^message-io))
         (read-next-handshake-message)))
 
   ;; If we're the initiator, we should send a message, otherwise listen for
