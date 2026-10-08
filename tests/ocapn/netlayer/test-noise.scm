@@ -63,11 +63,20 @@
     (#(ok cell-sref) (string? (ocapn-id->string cell-sref)))
     (_ #f)))
 
-;; Noise messages must be 65519 bytes long. The noise netlayer chunks messages
-;; over this size, lets check chunking. We'll set the value of our cell to be
-;; a really large bytevector, and then read it back which will pass it over
-;; OCapN twice!
-(define our-long-bv (make-bytevector (* 65519 12) 0))
+;; Noise messages cannot exceed 65519 bytes long. The noise netlayer chunks
+;; messages over this size, lets check chunking. We'll set the value of our cell
+;; to be a really large bytevector, and then read it back which will pass it
+;; over OCapN twice!
+;; Just for robustness sake, let's populate the bv with different data.
+(define our-long-bv-length 555912)
+(define our-long-bv (make-bytevector our-long-bv-length))
+(let lp ((index 0))
+  (let ((new-index (+ index 8)))
+    ;; The value doesn't matter, it's mostly so it's not all the same value.
+    (bytevector-fill! our-long-bv (modulo index 255) index new-index)
+    (when (< new-index our-long-bv-length)
+      (lp new-index))))
+
 (test-equal "Check noise supports sending a large value"
   (vector 'ok our-long-bv)
   (resolve-vow-and-return-result

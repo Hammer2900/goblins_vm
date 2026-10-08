@@ -71,14 +71,14 @@
                 "0iqji4yf02a3981lhla44ia0na4cj6shf5c3850n47k90hcjscv1")))))))
 
 
-(define guile-noise-protocol
+(define guile-noise
   (package
-   (name "guile-noise-protocol")
+   (name "guile-noise")
    (version "0.1.0")
    (source (origin
             (method git-fetch)
             (uri (git-reference
-                  (url "https://codeberg.org/spritely/guile-noise-protocol.git")
+                  (url "https://codeberg.org/spritely/guile-noise.git")
                   (commit "7db534e288b5aabc055a3f52606b593e1485c687")))
             (sha256
              (base32
@@ -91,7 +91,7 @@
    (propagated-inputs (list guile-gnutls*))
    (synopsis "Guile implementation of the Noise Protocol")
    (description "Guile implementation of the Noise Protocol")
-   (home-page "https://codeberg.org/spritely/guile-noise-protocol")
+   (home-page "https://codeberg.org/spritely/guile-noise")
    (license license:asl2.0)))
 
 (package
@@ -116,8 +116,7 @@
          guile-lib guile-syntax-highlight lcov tor))
   (inputs (list graphviz guile-next guile-hoot))
   (propagated-inputs
-   (list guile-fibers guile-gnutls* guile-noise-protocol guile-websocket
-         guile-bstructs))
+   (list guile-fibers guile-gnutls* guile-noise guile-websocket guile-bstructs))
   (synopsis "Transactional, distributed object programming environment")
   (description
    "Spritely Goblins is a transactional, distributed object programming
