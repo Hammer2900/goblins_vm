@@ -15,6 +15,7 @@
   #:use-module (goblins core)
   #:use-module (goblins define-actor)
   #:use-module (goblins actor-lib inbox)
+  #:use-module (goblins actor-lib joiners)
   #:use-module (goblins actor-lib methods)
   #:use-module (goblins actor-lib on)
   #:use-module (goblins actor-lib ward)
@@ -28,6 +29,7 @@
   #:use-module (goblins contrib syrup)
   #:use-module (rnrs bytevectors)
   #:use-module (rnrs bytevectors gnu)
+  #:use-module (ice-9 binary-ports)
   #:use-module (ice-9 match)
   #:use-module (noise)
   #:export (^noise-netlayer
@@ -67,20 +69,17 @@
                      (lp (+ i k))))
              '())))))
 
-(define (noise-decrypt-and-dechunk noise message)
-  (match message
-    ((? bytevector?) (noise-decode noise message))
-    ((length-prefix . chunks)
-     (let ((bv (make-bytevector length-prefix)))
-       (let lp ((index 0)
-                (remaining chunks))
-         (match remaining
-           (() bv)
-           ((next-chunk . rest)
-            (let* ((decrypted (noise-decode noise next-chunk))
-                   (decrypted-length (bytevector-length decrypted)))
-              (bytevector-copy! decrypted 0 bv index decrypted-length)
-              (lp (+ index decrypted-length) rest)))))))))
+(define (noise-decrypt-and-dechunk noise length chunks)
+  (define bv (make-bytevector length))
+  (let lp ((index 0)
+           (remaining chunks))
+    (match remaining
+      (() bv)
+      ((next-chunk . rest)
+       (let* ((decrypted (noise-decode noise next-chunk))
+              (decrypted-length (bytevector-length decrypted)))
+         (bytevector-copy! decrypted 0 bv index decrypted-length)
+         (lp (+ index decrypted-length) rest))))))
 
 (define* (spawn-noise-connection our-static-keypair initiator? our-outbox
                                  #:optional
@@ -96,12 +95,27 @@
   (define-values (message-io-vow message-io-resolver)
     (spawn-promise-and-resolver))
 
+  ;; Watch for severance between us and the remote peer.
+  (define-values (severed-vow severed-resolver)
+    (spawn-promise-and-resolver))
+
+  (let-on ((our-outbox our-outbox))
+    (when (remote-refr? our-outbox)
+      (on-sever our-outbox
+                (lambda (type reason)
+                  (<-np severed-resolver 'fulfill (eof-object))
+                  (<-np stop-inbox!)))))
+
   (define (^message-io bcom)
     (methods
      ((read-message unmarshallers)
-      (let-on ((encrypted-msg (<- our-inbox)))
-        (syrup-decode (noise-decrypt-and-dechunk noise encrypted-msg)
-                      #:unmarshallers unmarshallers)))
+      (define (decode bv)
+        (syrup-decode bv #:unmarshallers unmarshallers))
+      (on-match (race (<- our-inbox) severed-vow)
+        ((? bytevector? bv) (decode (noise-decode noise bv)))
+        ((length . chunks)
+         (decode (noise-decrypt-and-dechunk noise length chunks)))
+        ((? eof-object? obj) obj)))
      ((write-message msg marshallers)
       (define encoded-msg (syrup-encode msg #:marshallers marshallers))
       (<-np our-outbox (noise-chunk-and-encrypt noise encoded-msg)))))

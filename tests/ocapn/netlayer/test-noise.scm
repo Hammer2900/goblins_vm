@@ -77,13 +77,33 @@
     (when (< new-index our-long-bv-length)
       (lp new-index))))
 
-(test-equal "Check noise supports sending a large value"
-  (vector 'ok our-long-bv)
+;; While test-equal is probably what we want here, don't use it. It includes
+;; the expected and received values in the log which are... well, huge
+;; bytevectors.
+(test-assert "Check noise supports sending a large value"
+  (match (resolve-vow-and-return-result
+          b-vat
+          (lambda ()
+            (<-np remote-cell our-long-bv)
+            (<- remote-cell)))
+    (#(ok (? bytevector? actual-bv)) (bytevector=? our-long-bv actual-bv))
+    (_ #f)))
+
+;; Check that severence propegates from the lower netlayer
+(test-equal "Check severence propegates from lower netlayer to noise netlayer"
+  #(ok "Remote disconnected")
   (resolve-vow-and-return-result
    b-vat
    (lambda ()
-     (<-np remote-cell our-long-bv)
-     (<- remote-cell))))
+     (define-values (sever-vow sever-resolver)
+       (spawn-promise-and-resolver))
+     (on remote-cell
+         (lambda (cell)
+           (on-sever cell
+                     (lambda (type reason)
+                       (<-np sever-resolver 'fulfill "Remote disconnected")))))
+     (<-np b-fake-netlayer 'halt)
+     sever-vow)))
 
 ;; Test aurie + noise
 ;; The main thing we're testing here is persistent sturdyrefs by the noise
