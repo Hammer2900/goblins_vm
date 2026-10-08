@@ -160,8 +160,8 @@
 (define* (^noise-netlayer bcom netlayer
                           #:key
                           (name 'noise)
-                          (static-keypair (generate-x25519-keypair)))
-  (define mycapn (spawn-mycapn netlayer))
+                          (static-keypair (generate-x25519-keypair))
+                          (mycapn (spawn-mycapn netlayer)))
   (define-values (warden incanter)
     (spawn-warding-pair))
   (define noise-connector

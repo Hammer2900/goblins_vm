@@ -25,31 +25,31 @@
              (goblins ocapn netlayer onion)
              (goblins ocapn netlayer tcp-tls)
              (goblins ocapn netlayer websocket)
-             (goblins ocapn netlayer prelay)
-             (goblins ocapn netlayer prelay-utils)
+             (goblins ocapn netlayer relay)
+             (goblins ocapn netlayer relay-utils)
              (goblins persistence-store syrup)
              (fibers conditions)
              (ice-9 match)
              (srfi srfi-11))
 
 (define syrup-store-path
-  (getenv "PRELAY_SERVER_STORE"))
+  (getenv "RELAY_SERVER_STORE"))
 
 (define-actor (^register-facet _bcom mycapn netlayer-name)
   (match-lambda*
     [('register obj)
      (<- mycapn 'register obj netlayer-name)]))
 
-(define prelay-server-env
+(define relay-server-env
   (make-persistence-env
-   `((((examples prelay-server) ^register-facet) ,^register-facet))
+   `((((examples relay-server) ^register-facet) ,^register-facet))
    #:extends (list captp-env facet-env tcp-tls-netlayer-env
-                   onion-netlayer-env prelay-env prelay-utils-env)))
+                   onion-netlayer-env relay-env relay-utils-env)))
 
 (define (spawn-relay-vat spawn-roots-thunk)
   (if syrup-store-path
       (spawn-persistent-vat
-       prelay-server-env
+       relay-server-env
        spawn-roots-thunk
        (make-syrup-store syrup-store-path)
        #:name "relay-vat")
@@ -95,7 +95,7 @@
       (spawn-mycapn netlayer))
     (values netlayer
             mycapn
-            (spawn ^prelay-admin
+            (spawn ^relay-admin
                   (spawn ^facet mycapn 'enliven)
                   (spawn ^register-facet mycapn ($ netlayer 'netlayer-name))))))
 

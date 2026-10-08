@@ -561,7 +561,7 @@ standard TCP sockets and all traffic is encrypted with self-signed TLS
 keys.  A new netlayer instance can be spawned with the
 @code{^tcp-tls-netlayer} object from the @code{(goblins ocapn
 netlayer tcp-tls)} module.  The TCP + TLS netlayer is often used in
-conjunction with, and as a foundation for, the @ref{Prelay} netlayer.
+conjunction with, and as a foundation for, the @ref{Relay} netlayer.
 
 @lisp
 > (define netlayer (spawn ^tcp-tls-netlayer "example.com"))
@@ -593,9 +593,9 @@ machines that are not dedicated servers are not accessible from the
 public Internet due to the presence of a NAT gateway between the local
 network and the Internet.  For this reason the most common way to use
 the TCP + TLS netlayer is as an underlying foundation for the
-@ref{Prelay} netlayer.
+@ref{Relay} netlayer.
 
-Without using the @ref{Prelay} netlayer, the only way to reach peers
+Without using the @ref{Relay} netlayer, the only way to reach peers
 behind NAT gateways is if those peers have setup the necessary port
 forwarding configuration on their local network's firewall and have
 configured the netlayer to use their public IP as the host name.  If
@@ -785,7 +785,7 @@ opt-out of this security model and that the WebSocket netlayer alone
 cannot provide the full OCapN experience.  Thus the WebSocket netlayer
 should be thought of as a ``bootstrap'' netlayer; one which is used to
 escape the client-server model and reach a peer-to-peer network.  Use
-this netlayer together with the @ref{Prelay} netlayer to achieve this
+this netlayer together with the @ref{Relay} netlayer to achieve this
 goal.
 
 @deffn {Constructor} ^websocket-netlayer [#:host "127.0.0.1"] @
@@ -893,17 +893,21 @@ keypair will be generated.
 @defvr {Persistence Environment} noise-netlayer-env
 @end defvr
 
-@node Prelay
-@subsection Prelay (Unencrypted, v0)
+@node Relay
+@subsection Relay
 
-The purpose of the prelay netlayer is to permit connections between
+The purpose of the relay netlayer is to permit connections between
 two parties which cannot feasibly directly connect.  For instance,
 some users may be able to feasibly connect unidirectionally via the
-@ref{TCP + TLS} netlayer to a ``public'' peer, but may not be
-themselves reachable over a consistent IP address.  For this reason,
-the Prelay netlayer exists.
+@ref{WebSocket} netlayer to a ``public'' peer, but may not be
+themselves reachable.  For this reason, the Relay netlayer exists.
 
-The surprising thing about the Prelay netlayer is that it is a netlayer
+The Relay netlayer provides strong and robust end-to-end encryption
+meaning the relay server itself cannot see into or modify the messages
+it's relaying. The end-to-end encryption is done by utilizing the
+@ref{Noise} netlayer.
+
+The surprising thing about the Relay netlayer is that it is a netlayer
 which runs *over another netlayer* by passing messages through an
 intermediate object, which itself speaks to other intermediate objects
 routing to other likely isolated users, bridging those users with the
@@ -911,31 +915,19 @@ illusion of being direct peers.  (The users need not use relays on the
 same peer; ``federation'' is achieved automatically through the
 underlying OCapN netlayer's connectivity properties.)
 
-The primary limitation of the prelay netlayer at present is that
-messages are delivered in cleartext through the chosen relay,
-unauthenticated, which means the relay has the power to both snoop on
-and modify messages.  A fully end-to-end-encrypted Relay netlayer is on
-schedule to replace the present unencrypted, unauthenticated design.
-At present the prelay netlayer has characteristics similar to IRC,
-vanilla ActivityPub, and many multiplayer game systems which also tend
-to rely on trusting a provider, but we would like to (and will!) do
-better in the future.
+There are two essential APIs for the relay. The first is run on relay
+servers, which act as the routers:
 
-Some simpler APIs for the prelay netlayer are coming, particularly a
-convenient daemon for managing prelay peers for users.
+@deffn {Procedure} spawn-relay-pair enliven
 
-In the meanwhile, there are two essential APIs.  The first is run on
-relay peers, which act as the routers:
-
-@deffn {Procedure} spawn-prelay-pair enliven
-
-Spawn a pair of prelay objects: the @var{endpoint} (public) and
+Spawn a pair of relay objects: the @var{endpoint} (public) and
 @var{controller} (private).  The endpoint permits other peers to send
 messages, and the controller permits sending messages to other peers.
 
-@var{enliven} is a object which when provided the @code{'enliven} method and a
-sturdyref, returns a promise to the object.  This is likely created by using
-the @xref{Facet} library with the MyCapN object.
+@var{enliven} is a object which when provided the @code{'enliven}
+method and a sturdyref, returns a promise to the object.  This is
+likely created by using the @xref{Facet} library with the MyCapN
+object.
 
 Returns two values to its continuation, the @var{endpoint} and
 @var{controller} respectively.
@@ -946,90 +938,94 @@ In order for the @var{endpoint} to be useful as a public identity, a
 sturdyref must be made for it and then converted with the following
 procedure:
 
-@deffn {Procedure} prelay-sturdyref->prelay-peer prelay-endpoint-sref
+@deffn {Procedure} relay-sturdyref->relay-peer relay-endpoint-sref
 
-This transforms @var{prelay-endpoint-sref} into an OCapN prelay peer
+This transforms @var{relay-endpoint-sref} into an OCapN relay peer
 identifier and returns that object and identifies this peer on the
 network.  (This is done by transforming and serializing relevant
 information about the sturdyref into a data structure that is then
 packed into the @code{ocapn-peer-designator} object, but this detail
-is not particularly important for most users.)
+is not particularly important for most users).
 
 @end deffn
 
 This transformation can be reversed with the following procedure:
 
-@deffn {Procedure} prelay-peer->prelay-sturdyref prelay-peer
+@deffn {Procedure} relay-peer->relay-sturdyref relay-peer
 
-Do the reverse of @var{prelay-sturdyref->prelay-peer}, which is to say,
+Do the reverse of @var{relay-sturdyref->relay-peer}, which is to say,
 transform the peer back into a sturdyref which represents the endpoint
 which handles routing messages for this peer.
 
 Whew, that's a lot!  The above procedures are essential for setting up
-prelay-as-relay-host infrastructure, but setting up a prelay-using
+relay-as-relay-host infrastructure, but setting up a relay-using
 netlayer is much simpler:
 
 @end deffn
 
-@deffn {Constructor} ^prelay-netlayer bcom enliven prelay-endpoint-sref prelay-controller-sref
+@deffn {Constructor} ^relay-netlayer bcom mycapn @
+                                          relay-controller-sref @
+                                          relay-endpoint-sref
 
-Constructs the prelay netlayer which lives on the client.
+Constructs the relay netlayer which lives on the client.
 
-Takes three arguments.  Two of these arguments are sturdyrefs to objects which
-likely live on the prelay server and their refrs were created by the
-@code{spawn-prelay-pair} procedure defined above.
+Takes three required arguments. Two of these arguments are sturdyrefs
+to objects which likely live on the relay server and their refrs were
+created by the @code{spawn-relay-pair} procedure defined above.
 
 The three arguments are:
 
 @itemize
 @item
-@var{enliven} is an object which, when sent an @code{'enliven} message with a
-sturdyref, returns a promise to a remote object.  This is likely created by
-using the @xref{Facet} library with the MyCapN object.
+@var{mycapn} A reference to a MyCapN object configured with the
+transport netlayer to be used for connecting to the relay server. This
+should be considered to be the relay netlayer's own MyCapN and not
+used for anything else.
 @item
-@var{prelay-endpoint-sref} is a sturdyref to the public endpoint which
+@var{relay-controller-sref} is a sturdyref to the private controller
+object. This is used by the relay netlayer to initiate new connections
+and register itself with the relay server.
+@item
+@var{relay-endpoint-sref} is a sturdyref to the public endpoint which
 identifies the peer on the OCapN network.
-@item
-@var{prelay-controller-sref} is a sturdyref to the private controller object.
-This is used by the prelay netlayer to initiate new connections and register
-itself with the prelay server.
 @end itemize
 
 @end deffn
 
-@defvr {Persistence Environment} prelay-env
+@defvr {Persistence Environment} relay-env
 @end defvr
 
-@node Prelay Utils
-@subsection Prelay Utils
+@node Relay Utils
+@subsection Relay Utils
 
-The @ref{Prelay} netlayer is built around there being a Prelay server which
-accepts connections, allowing the controlling user to open new connections
-and facilitates passing messages back and forth for established
-connections. This Prelay server must be setup somewhere accessible on
-the network it operates.
+The @ref{Relay} netlayer is built around there being a relay server
+which accepts connections, allowing the controlling user to open new
+connections and facilitates passing messages back and forth for
+established connections. This relay server must be setup somewhere
+accessible on the network it operates.
 
-Goblins comes with a set of Prelay utils which are designed to offer one
-way to setup the server with multiple accounts. There are many ways this
-could be done, however other Prelay server designs are left to the
-reader to build. The Prelay utils are available in the
-@code{(goblins ocapn netlayer prelay-utils)} module, and an example of how
-to use them to run a daemon can be found in @code{examples/prelay-server.scm},
-as shipped with Spritely Goblins.
+Goblins comes with a set of relay utilities which are designed to
+offer one way to setup the server with multiple accounts. There are
+many ways this could be done, however other relay server designs are
+left to the reader to build. The relay utilities are available in the
+@code{(goblins ocapn netlayer relay-utils)} module, and an example of
+how to use them to run a daemon can be found in
+@code{examples/relay-server.scm}, as shipped with Spritely Goblins.
 
-@code{(goblins ocapn netlayer prelay-utils)} provides the following functions:
+@code{(goblins ocapn netlayer relay-utils)} provides the following
+procedures:
 
-@deffn {Constructor} ^prelay-admin bcom enliven register
+@deffn {Constructor} ^relay-admin bcom enliven register
 
-This constructs an admin actor to manage prelay accounts. This is to be
+This constructs an admin actor to manage relay accounts. This is to be
 used on the ``server'' side.
 
-It takes two arguments: @var{enliven} which is a facet object that when
-provided the symbol @code{'enliven} followed by a OCapN sturdyref
+It takes two arguments: @var{enliven} which is a facet object that
+when provided the symbol @code{'enliven} followed by a OCapN sturdyref
 returns a vow of the enlivened sturdyref. It also takes @var{register}
-which when provided an object will make that object available at a given
-sturdyref and return that to the caller. Both of these are likely facets
-of the Mycapn object.
+which when provided an object will make that object available at a
+given sturdyref and return that to the caller. Both of these are
+likely facets of the Mycapn object.
 
 The admin object itself has two methods, those are:
 
@@ -1038,28 +1034,31 @@ The admin object itself has two methods, those are:
 @code{add-account} which takes a name of an account and returns a
 sturdyref. This sturdyref is designed to be given to the user who is
 controlling the relay account. The user can then enliven said
-sturdyref and send a message to the enlivened object to get the prelay
-endpoint and prelay controller objects.
+sturdyref and send a message to the enlivened object to get the relay
+endpoint and relay controller objects.
 
 @item
 @code{get-accounts} which provides a list of all account names
-registered with this prelay admin.
+registered with this relay admin.
 @end itemize
 
 @end deffn
 
-@deffn {Procedure} fetch-and-spawn-prelay-netlayer account-setup-sref [#:netlayer] [#:mycapn]
+@deffn {Procedure} fetch-and-spawn-relay-netlayer account-setup-sref @
+                                                  [#:netlayer] @
+                                                  [#:mycapn]
 
 This takes a account setup sturdyref retrieved from the
-@code{add-account} method on the Prelay admin and returns a
-promise resolving to a freshly spawned Prelay netlayer.
+@code{add-account} method on the relay admin and returns a
+promise resolving to a freshly spawned relay netlayer.
 This is to be used on the ``client'' side.
 
-By default when using the relay over @ref{Tor Onion Services} netlayer
-or @ref{TCP + TLS} netlayer it will setup a new netlayer to use to speak
-with the relay over. If a different netlayer is to be used, or any of
-the default options need changing, the netlayer should be setup beforehand
-and passed in through the @var{#:netlayer} argument.
+By default when using the relay over @ref{Tor Onion Services}
+netlayer, @ref{TCP + TLS} netlayer, or @ref{WebSocket} netlayer, it
+will setup a new netlayer to use to speak with the relay over. If a
+different netlayer is to be used, or any of the default options need
+changing, the netlayer should be setup beforehand and passed in
+through the @var{#:netlayer} argument.
 
 By default it will create a new mycapn, however if one already exists
 for the netlayer specified in @var{#:netlayer}, then you can pass that
@@ -1067,7 +1066,7 @@ in with the @var{#:mycapn} argument.
 
 @end deffn
 
-@defvr {Persistence Environment} prelay-utils-env
+@defvr {Persistence Environment} relay-utils-env
 @end defvr
 
 @node Handling Disconnects

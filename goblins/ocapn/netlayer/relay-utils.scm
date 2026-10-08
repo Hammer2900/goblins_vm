@@ -12,10 +12,10 @@
 ;;; See the License for the specific language governing permissions and
 ;;; limitations under the License.
 
-(define-library (goblins ocapn netlayer prelay-utils)
-  (export ^prelay-admin
-          fetch-and-spawn-prelay-netlayer
-          prelay-utils-env)
+(define-library (goblins ocapn netlayer relay-utils)
+  (export ^relay-admin
+          fetch-and-spawn-relay-netlayer
+          relay-utils-env)
 
   (import (guile)
           (goblins)
@@ -23,11 +23,12 @@
           (goblins utils ghash)
           (goblins ocapn captp)
           (goblins ocapn ids)
-          (goblins ocapn netlayer prelay)
+          (goblins ocapn netlayer relay)
           (goblins ocapn netlayer websocket)
           (goblins actor-lib methods)
           (goblins actor-lib joiners)
           (goblins actor-lib facet)
+          (goblins actor-lib on)
           (fibers channels)
           (ice-9 match))
 
@@ -42,33 +43,34 @@
       (define (setup-beh)
         (error "Already setup"))
       (define (main-beh)
-        (define-values (prelay-endpoint prelay-controller)
-          (spawn-prelay-pair enliven))
+        (define-values (relay-endpoint relay-controller)
+          (spawn-relay-pair enliven))
         (bcom (^relay-account bcom enliven register #:setup? #t)
               (all-of
-               (<- register 'register prelay-endpoint)
-               (<- register 'register prelay-controller))))
+               (<- register 'register relay-endpoint)
+               (<- register 'register relay-controller))))
       (if setup?
           setup-beh
           main-beh))
 
-    (define-actor (^prelay-admin bcom enliven register #:optional [accounts (make-ghash)])
-      "Allows for creating new prelay netlayer accounts with a name
+    (define-actor (^relay-admin bcom enliven register
+                                #:optional [accounts (make-ghash)])
+      "Allows for creating new relay netlayer accounts with a name
 
-It has two methods, the first `add-account' takes a name and creates a relay account
-for that name. It provides a sturdyref back which can be used by the client exactly
-once to configure and setup the relay.
+It has two methods, the first `add-account' takes a name and creates a relay
+account for that name. It provides a sturdyref back which can be used by the
+client exactly once to configure and setup the relay.
 
-The second method is `get-accounts' which lists all the account names that have been
-created on this prelay-admin."
+The second method is `get-accounts' which lists all the account names that have
+been created on this relay-admin."
 
       (methods
        [(add-account name)
         (when (hashmap-ref accounts name)
           (error "Account with name already exists" name))
         (define new-account (spawn ^relay-account enliven register))
-        (bcom (^prelay-admin bcom enliven register
-                             (hashmap-set accounts name new-account))
+        (bcom (^relay-admin bcom enliven register
+                            (hashmap-set accounts name new-account))
               (<- register 'register new-account))]
        [(get-accounts)
         (hashmap-fold
@@ -77,11 +79,11 @@ created on this prelay-admin."
          (list)
          accounts)]))
 
-    (define* (fetch-and-spawn-prelay-netlayer account-setup-sref
-                                              #:key
-                                              [netlayer #f]
-                                              [mycapn #f])
-      "Retrieves account from account-setup-sref and provides prelay-netlayer"
+    (define* (fetch-and-spawn-relay-netlayer account-setup-sref
+                                             #:key
+                                             [netlayer #f]
+                                             [mycapn #f])
+      "Retrieves account from account-setup-sref and provides relay-netlayer"
       (define account-setup-peer
         (ocapn-sturdyref-peer account-setup-sref))
       (define base-netlayer
@@ -98,37 +100,33 @@ created on this prelay-admin."
                 ('websocket (spawn ^websocket-netlayer)))))))
 
       ;; While most OCapN connections normally would expect connections to many
-      ;; different peers and support for handoffs between those, this situation is a
-      ;; bit different.  We're just looking for a connection between this peer and
-      ;; the prelay "server", this is what this mycapn object is that we're setting
-      ;; up. We should not expect any shortening or connection to ourselves problems
-      ;; with this setup.
+      ;; different peers and support for handoffs between those, this situation
+      ;; is a bit different.  We're just looking for a connection between this
+      ;; peer and the relay "server", this is what this mycapn object is that
+      ;; we're setting up. We should not expect any shortening or connection to
+      ;; ourselves problems with this setup.
       (define base-mycapn
         (or mycapn (spawn-mycapn base-netlayer)))
 
-      ;; Enliven the "setup" sturdyref and then setup the prelay netlayer with that.
+      ;; Enliven the "setup" sturdyref, then setup the relay netlayer with that.
       (define account-setup-vow
         (<- base-mycapn 'enliven account-setup-sref))
       (define account-vow (<- account-setup-vow))
-      (define prelay-endpoint-sref-vow
-        (on account-vow
-            (match-lambda
-              ((prelay-endpoint-sref _prelay-controller-sref)
-               prelay-endpoint-sref))
-            #:promise? #t))
-      (define prelay-controller-sref-vow
-        (on account-vow
-            (match-lambda
-              ((_prelay-endpoint-sref prelay-controller-sref)
-               prelay-controller-sref))
-            #:promise? #t))
-      (spawn ^prelay-netlayer
-             (spawn ^facet base-mycapn 'enliven)
-             prelay-endpoint-sref-vow
-             prelay-controller-sref-vow))
+      (define relay-endpoint-sref-vow
+        (on-match account-vow
+          ((relay-endpoint-sref _relay-controller-sref)
+           relay-endpoint-sref)))
+      (define relay-controller-sref-vow
+        (on-match account-vow
+          ((_relay-endpoint-sref relay-controller-sref)
+           relay-controller-sref)))
+      (spawn ^relay-netlayer
+             base-mycapn
+             relay-endpoint-sref-vow
+             relay-controller-sref-vow))
 
-    (define prelay-utils-env
-      (make-persistence-env
-       `((((goblins ocapn netlayer prelay-utils) ^relay-account) ,^relay-account)
-         (((goblins ocapn netlayer prelay-utils) ^relay-admin) ,^prelay-admin))
-    #:extends prelay-env))))
+    (define relay-utils-env
+      (persistence-env-compose
+       (namespace-env '(goblins ocapn netlayer relay-utils)
+         ^relay-account ^relay-admin)
+       relay-env))))

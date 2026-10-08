@@ -1,5 +1,5 @@
 ;;; Copyright 2023 Christine Lemmer-Webber
-;;; Copyright 2024 Jessica Tallon
+;;; Copyright 2024-2026 Jessica Tallon
 ;;;
 ;;; Licensed under the Apache License, Version 2.0 (the "License");
 ;;; you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
 ;;; See the License for the specific language governing permissions and
 ;;; limitations under the License.
 
-(define-module (goblins ocapn netlayer prelay)
+(define-module (goblins ocapn netlayer relay)
   #:use-module (ice-9 match)
   #:use-module (fibers channels)
   #:use-module (goblins)
@@ -22,31 +22,30 @@
   #:use-module (goblins actor-lib cell)
   #:use-module (goblins actor-lib methods)
   #:use-module (goblins actor-lib facet)
+  #:use-module (goblins actor-lib on)
   #:use-module (goblins actor-lib io)
   #:use-module (goblins actor-lib timers)
   #:use-module (goblins ocapn ids)
+  #:use-module (goblins ocapn captp)
+  #:use-module (goblins ocapn netlayer noise)
   #:use-module (goblins utils base32)
   #:use-module (goblins contrib syrup)
-  #:export (prelay-sturdyref->prelay-peer
-            prelay-peer->prelay-sturdyref
-            spawn-prelay-pair
-            ^prelay-netlayer
-            prelay-env
-
-            ;; Deprecated
-            prelay-sturdyref->prelay-node
-            prelay-node->prelay-sturdyref))
+  #:export (relay-sturdyref->relay-peer
+            relay-peer->relay-sturdyref
+            spawn-relay-pair
+            ^relay-netlayer
+            relay-env))
 
 
 ;;; URI utils
 ;;; =========
 
-(define (prelay-sturdyref->prelay-peer prelay-endpoint-sref)
-  "Convert PRELAY-ENDPOINT-SREF sturdyref into an ocapn peer
+(define (relay-sturdyref->relay-peer relay-endpoint-sref)
+  "Convert RELAY-ENDPOINT-SREF sturdyref into an ocapn peer
 
-This sturdyref represents the underlying prelay endpoint."
-  (let* ((swiss-num (ocapn-sturdyref-swiss-num prelay-endpoint-sref))
-         (peer (ocapn-sturdyref-peer prelay-endpoint-sref))
+This sturdyref represents the underlying relay endpoint."
+  (let* ((swiss-num (ocapn-sturdyref-swiss-num relay-endpoint-sref))
+         (peer (ocapn-sturdyref-peer relay-endpoint-sref))
          (orig-transport (ocapn-peer-transport peer))
          (orig-designator (ocapn-peer-designator peer))
          (orig-hints (ocapn-peer-hints peer))
@@ -55,24 +54,24 @@ This sturdyref represents the underlying prelay endpoint."
            (syrup-encode (list orig-designator
                                orig-transport
                                swiss-num)))))
-    (make-ocapn-peer 'prelay
+    (make-ocapn-peer 'underlay
                      encoded-designator
                      orig-hints)))
 
-(define (prelay-peer->prelay-sturdyref prelay-peer)
-  "Convert PRELAY-PEER into an OCapN sturdyref
+(define (relay-peer->relay-sturdyref relay-peer)
+  "Convert RELAY-PEER into an OCapN sturdyref
 
-This sturdyref represents the underlying prelay endpoint."
-  (let ((netlayer-name (ocapn-peer-transport prelay-peer)))
-    (unless (eq? netlayer-name 'prelay)
-      (error "Attempt to connect to non-prelay peer via prelay netlayer:"
+This sturdyref represents the underlying relay endpoint."
+  (let ((netlayer-name (ocapn-peer-transport relay-peer)))
+    (unless (eq? netlayer-name 'underlay)
+      (error "Attempt to connect to non-relay peer via relay netlayer:"
              netlayer-name)))
-  (match (syrup-decode (base32-decode (ocapn-peer-designator prelay-peer)))
+  (match (syrup-decode (base32-decode (ocapn-peer-designator relay-peer)))
     ((designator netlayer-name swiss-num)
      (let ((reconstructed-peer
             (make-ocapn-peer netlayer-name
                              designator
-                             (ocapn-peer-hints prelay-peer))))
+                             (ocapn-peer-hints relay-peer))))
        (make-ocapn-sturdyref reconstructed-peer
                              swiss-num)))))
 
@@ -94,10 +93,10 @@ This sturdyref represents the underlying prelay endpoint."
 (define-actor (^swappable-promise bcom #:optional initial-value)
   ;; There are two main reasons we don't want aurie to persist the
   ;; value of this resolver:
-  ;; 1. It'll almost always either be an unresolved promise or
-  ;;    remote-refr, neither of which are actually depictable (yet).
-  ;; 2. This is used in the prelay netlayer and should be setup anew
-  ;;    each time anyway.
+  ;; 1. It'll almost always either be an unresolved promise or remote-refr,
+  ;;    neither of which are actually depictable (yet).
+  ;; 2. This is used in the relay netlayer and should be setup anew each time
+  ;;    anyway.
   #:portrait (lambda () '())
   
   (define-values (initial-vow initial-resolver)
@@ -137,23 +136,22 @@ be fulfilled more than once"
 
 
 
-;;; PRELAY CODE
+;;; RELAY CODE
 ;;; ===========
 
 ;; This actually lives *on* the relay vat... ie, it *is* the relay.
 ;; TODO: This needs to handle all the severance stuff when a disconnect
 ;;   happens or a new deliver-to is set up
-(define-actor (^prelay-endpoint _bcom client-session-listener)
-  (lambda (their-prelay-in)
-    (define our-prelay-out (spawn ^session-prelay-out their-prelay-in))
-    (define our-prelay-in-vow
-      (on (<- client-session-listener 'incoming-session our-prelay-out)
-          (lambda (client-deliver-incoming)
-            (spawn ^session-prelay-in client-deliver-incoming))
-          #:promise? #t))
-    our-prelay-in-vow))
+(define-actor (^relay-endpoint _bcom client-session-listener)
+  (lambda (their-relay-in)
+    (define our-relay-out (spawn ^session-relay-out their-relay-in))
+    (define our-relay-in-vow
+      (let-on ((client-deliver-incoming
+                (<- client-session-listener 'incoming-session our-relay-out)))
+        (spawn ^session-relay-in client-deliver-incoming)))
+    our-relay-in-vow))
 
-(define-actor (^prelay-controller _bcom enliven client-session-listener-resolver)
+(define-actor (^relay-controller _bcom enliven client-session-listener-resolver)
   (methods
    ;; Connect to TO-ENDPOINT, which can be a live ref or a sturdyref
    ((connect to-endpoint deliver-in)
@@ -161,49 +159,49 @@ be fulfilled more than once"
     ;; refr or is it always a sturdyref?
     ;; TODO: Do we need to transform this peer?
     (define to-endpoint-vow
-      (<- enliven 'enliven (prelay-peer->prelay-sturdyref to-endpoint)))
+      (<- enliven 'enliven (relay-peer->relay-sturdyref to-endpoint)))
 
-    (define our-prelay-in
-      (spawn ^session-prelay-in deliver-in))
-    (define their-prelay-in-vow
-      (<- to-endpoint-vow our-prelay-in))
+    (define our-relay-in
+      (spawn ^session-relay-in deliver-in))
+    (define their-relay-in-vow
+      (<- to-endpoint-vow our-relay-in))
 
-    ;; If our connection to our client severs, we need to propagate that to the
+    ;; If our connection to our client severs, we need to propagate that to th
     ;; other relay.
     (when (remote-refr? deliver-in)
       (on-sever deliver-in
                 (lambda (type reason)
                   ($ client-session-listener-resolver 'reset)
-                  (<-np their-prelay-in-vow 'abort))))
+                  (<-np their-relay-in-vow 'abort))))
 
     ;; If we loose connection to their prelay, we want to send a sever to the
     ;; client.
-    (on their-prelay-in-vow
-        (lambda (their-prelay-in)
-          (when (remote-refr? their-prelay-in)
-            (on-sever their-prelay-in
+    (on their-relay-in-vow
+        (lambda (their-relay-in)
+          (when (remote-refr? their-relay-in)
+            (on-sever their-relay-in
                       (lambda (type reason)
                         (<-np deliver-in 'abort))))))
-
+    
     ;; [Note from cwebber, 2023-07-28:]
     ;; I'm more confident about doing this particular `on' for message
     ;; ordering semantics, though it may have been fine to hand the
-    ;; ^session-prelay-out their-prelay-in-vow... it maybe is!  I'm
+    ;; ^session-relay-out their-relay-in-vow... it maybe is!  I'm
     ;; just doing too much at once to carefully analyze for sure,
     ;; and ordering guarantees here is pretty essential
-    (define our-prelay-out-vow
-      (on their-prelay-in-vow
-          (lambda (their-prelay-in)
-            (spawn ^session-prelay-out their-prelay-in))
-          #:promise? #t))
+    (define our-relay-out-vow
+      (let-on ((their-relay-in their-relay-in-vow))
+        ;; Spawn our relay out.
+        (spawn ^session-relay-out their-relay-in)))
+
     ;; Hand back the promise which will allow for sending messages
     ;; once everything is correctly configured
-    our-prelay-out-vow)
+    our-relay-out-vow)
    ((set-session-listener session-listener)
     ($ client-session-listener-resolver 'fulfill session-listener))))
 
-(define (spawn-prelay-pair enliven)
-  "Spawn a pair of prelay objects: the endpoint (public) and controller (private)
+(define (spawn-relay-pair enliven)
+  "Spawn a pair of relay objects: the endpoint (public) and controller (private)
 
 ENLIVEN is a capability to enliven a sturdyref, provided with the method 'enliven
 and a sturdyref, it should return a promise.
@@ -215,11 +213,11 @@ respectively."
                   client-session-listener-resolver)
     (spawn-swappable-promise-and-resolver))
 
-  (values (spawn ^prelay-endpoint client-session-listener)
-          (spawn ^prelay-controller enliven client-session-listener-resolver)))
+  (values (spawn ^relay-endpoint client-session-listener)
+          (spawn ^relay-controller enliven client-session-listener-resolver)))
 
-(define (^session-prelay-in bcom deliver-in)
-  "Constructs a PRELAY-IN object, used to send objects to us"
+(define (^session-relay-in bcom deliver-in)
+  "Constructs a RELAY-IN object, used to send objects to us"
   (define base-beh
     (methods
      ;; Pass along message to user's deliver-in
@@ -231,20 +229,20 @@ respectively."
       (<-np deliver-in 'abort)
       (bcom closed-beh))))
   (define closed-beh
-    (lambda _ (error "Prelay session closed")))
+    (lambda _ (error "Relay session closed")))
   base-beh)
 
-(define (^session-prelay-out bcom their-prelay-in)
-  "Constructs a PRELAY-OUT object, which we use to send to the other side"
+(define (^session-relay-out bcom their-relay-in)
+  "Constructs a RELAY-OUT object, which we use to send to the other side"
   (define base-beh
     (methods
      ((deliver encoded-message)
-      (<-np their-prelay-in 'deliver encoded-message))
+      (<-np their-relay-in 'deliver encoded-message))
      ((abort)
-      (<-np their-prelay-in 'abort)
+      (<-np their-relay-in 'abort)
       (bcom closed-beh))))
   (define closed-beh
-    (lambda _ (error "Prelay session closed")))
+    (lambda _ (error "Relay session closed")))
   base-beh)
 
 
@@ -252,7 +250,7 @@ respectively."
 ;;; CLIENT CODE
 ;;; ===========
 
-;; This lives on the "prelay client"
+;; This lives on the "relay client"
 
 ;; We're going to hand the connection establisher, as usual for
 ;; netlayers, a (blocking) method to read messages and a (blocking)
@@ -271,43 +269,39 @@ respectively."
 ;;    messages to a blocking interface without itself blocking
 ;;  - Outgoing messages: These are much easier, as we can simply
 ;;    serialize the message and fire it off to the remote actor.
-(define-actor (^prelay-netlayer* bcom self enliven
-                                 prelay-endpoint-sref-vow
-                                 prelay-controller-sref-vow)
+(define-actor (^underlay-netlayer bcom self enliven
+                                  relay-endpoint-sref-vow
+                                  relay-controller-sref-vow)
   (define our-location-vow
-    (on prelay-endpoint-sref-vow
-        (lambda (prelay-endpoint-sref)
-          (prelay-sturdyref->prelay-peer prelay-endpoint-sref))
-        #:promise? #t))
+    (let-on ((relay-endpoint-sref relay-endpoint-sref-vow))
+      (relay-sturdyref->relay-peer relay-endpoint-sref)))
 
   (define-values (conn-establisher-vow conn-establisher-resolver)
     (spawn-promise-and-resolver))
 
-  (define-values (prelay-controller-vow prelay-controller-resolver)
+  (define-values (relay-controller-vow relay-controller-resolver)
     (spawn-swappable-promise-and-resolver))
 
-  ;; We want the prelay netlayer to reconnect if a sever occurs with it and its
+  ;; We want the relay netlayer to reconnect if a sever occurs with it and its
   ;; server. Do this by attempting a reconnect and backing off if it fails.
-  (define* (install-new-prelay-controller! #:optional wait-time-sec)
+  (define* (install-new-relay-controller! #:optional wait-time-sec)
     (define controller-vow
       (if wait-time-sec
-          (on (timeout wait-time-sec)
-              (lambda _
-                (<- enliven 'enliven prelay-controller-sref-vow))
-              #:promise? #t)
-          (<- enliven 'enliven prelay-controller-sref-vow)))
+          (let-on ((_ (timeout wait-time-sec)))
+            (<- enliven 'enliven relay-controller-sref-vow))
+          (<- enliven 'enliven relay-controller-sref-vow)))
     (on controller-vow
-        (lambda (prelay-controller)
+        (lambda (relay-controller)
           ;; Setup the on-sever to detect when we need to reconnect.
-          (when (remote-refr? prelay-controller)
-            (on-sever prelay-controller
+          (when (remote-refr? relay-controller)
+            (on-sever relay-controller
                       (lambda (type reason)
-                        ($ prelay-controller-resolver 'reset)
-                        (install-new-prelay-controller!))))
+                        ($ relay-controller-resolver 'reset)
+                        (install-new-relay-controller!))))
           ;; Need to restart listening so we re-register with
           ;; the server since it's a new session.
           (start-listener)
-          ($ prelay-controller-resolver 'fulfill prelay-controller))
+          ($ relay-controller-resolver 'fulfill relay-controller))
         #:catch
         (lambda (err)
           ;; increase the wait time more and more each time.
@@ -315,25 +309,25 @@ respectively."
             (if wait-time-sec
                 (* wait-time-sec 2)
                 1))
-          ($ prelay-controller-resolver 'reset)
-          (install-new-prelay-controller! new-wait-time-sec))))
+          ($ relay-controller-resolver 'reset)
+          (install-new-relay-controller! new-wait-time-sec))))
 
-  (install-new-prelay-controller!)
+  (install-new-relay-controller!)
 
   (define (start-listener)
     (define (^session-listener _bcom)
       ;; This is where an incoming session comes in...
       (methods
-       ((incoming-session session-prelay-outgoing)
+       ((incoming-session session-relay-outgoing)
         (define-values (client-deliver-in incoming-deq-ch incoming-stop?)
           (setup-delivery-agent-and-actor))
         (define message-io
-          (spawn-message-io incoming-deq-ch session-prelay-outgoing))
+          (spawn-message-io incoming-deq-ch session-relay-outgoing))
 
-        ;; If our connection to the prelay server (i.e. session-prelay-outgoing)
-        ;; severs, we need to inform our Captp that.
-        (when (remote-refr? session-prelay-outgoing)
-          (on-sever session-prelay-outgoing
+        ;; If our connection to the relay server (i.e. session-relay-outgoing)
+        ;; severs, we need to inform our CapTP that.
+        (when (remote-refr? session-relay-outgoing)
+          (on-sever session-relay-outgoing
                     (lambda (type reason)
                       (<-np client-deliver-in 'abort))))
 
@@ -342,7 +336,7 @@ respectively."
         client-deliver-in)))
     (define listener (spawn ^session-listener))
     ;; Tell the remote endpoint that we're looking for incoming connections
-    (<-np prelay-controller-vow 'set-session-listener listener))
+    (<-np relay-controller-vow 'set-session-listener listener))
 
   (define-values (setup-netlayer-vow setup-netlayer-resolver)
     (spawn-promise-and-resolver))
@@ -353,7 +347,7 @@ respectively."
 
   (define (^netlayer _bcom our-location)
     (methods
-     ((netlayer-name) 'prelay)
+     ((netlayer-name) 'underlay)
      ((our-location) our-location)
      ((self-location? loc)
       (same-peer-location? our-location loc))
@@ -361,58 +355,48 @@ respectively."
       ;; Now that we're set up, transition to the main behavior
       (<-np conn-establisher-resolver 'fulfill conn-establisher))
      ((connect-to remote-peer)
-      ;; Commented out because the relay is going to do some key authentication
-      ;; checks later so it needs the peer itself... but we're going to need
-      ;; need to do that too presumably, so maybe we'll uncomment this once we
-      ;; add cryptography
-      ;; ;; Now we use our relay controller to connect to the object
-      ;; ;; First that means deconstructing the URI so we can get out
-      ;; ;; the relevant sturdyref object
-      ;; (define remote-endpoint-sref (relay-peer->relay-sturdyref remote-peer))
-      ;; ;; Now we need to enliven it
-      ;; (define remote-endpoint-vow (enliven remote-endpoint-sref))
       (define-values (deliver-in incoming-deq-ch incoming-stop?)
         (setup-delivery-agent-and-actor))
 
-      ;; TODO: Should we be giving just the sturdyref to the endpoint
-      ;;   or the remote-peer?  I'm not sure.
-      (on (<- prelay-controller-vow 'connect remote-peer deliver-in)
-          (lambda (session-prelay-outgoing)
-            (define message-io
-              (spawn-message-io incoming-deq-ch session-prelay-outgoing))
+      (let-on ((session-relay-outgoing
+                (<- relay-controller-vow 'connect remote-peer deliver-in)))
+        (define message-io
+          (spawn-message-io incoming-deq-ch session-relay-outgoing))
 
-            ;; If our connection to the prelay server (i.e. session-prelay-outgoing)
-            ;; severs, we need to inform our CapTP of that.
-            (when (remote-refr? session-prelay-outgoing)
-              (on-sever session-prelay-outgoing
-                        (lambda (type reason)
-                          (<-np deliver-in 'abort))))
+        ;; If our connection to the relay server (i.e. session-relay-outgoing)
+        ;; severs, we need to inform our CapTP of that.
+        (when (remote-refr? session-relay-outgoing)
+          (on-sever session-relay-outgoing
+                    (lambda (type reason)
+                      (<-np deliver-in 'abort))))
 
-            (<- conn-establisher-vow message-io remote-peer))
-          #:promise? #t))))
+        (<- conn-establisher-vow message-io remote-peer)))))
   (lambda args
     (match args
-      [('netlayer-name) 'prelay]
+      [('netlayer-name) 'underlay]
       [args
        (apply <- setup-netlayer-vow args)])))
 
-(define (^prelay-netlayer _bcom enliven controller-sref endpoint-sref)
-    "Constructs the prelay netlayer which lives on the client.
+(define (^relay-netlayer _bcom mycapn controller-sref endpoint-sref)
+  "Constructs the relay netlayer which lives on the client.
 
 Takes three arguments at spawn time:
- - ENLIVEN: is a capability to enliven a sturdyref, provided with the method 'enliven
-   and a sturdyref, it should return a promise.
-   Probably a facet of the MyCapN object.
- - PRELAY-ENDPOINT-SREF: Sturdyref of the endpoint we will use to
-   communicate with
- - PRELAY-CONTROLLER-SREF: Strudyref of the controller which we use to
-   pilot the prelay we communicate through."
+ - MYCAPN: A reference to a MyCapN object configured with the transport netlayer
+   to be used for connecting to the relay server. This should be considered to
+   be the relay netlayer's own MyCapN and not used for anything else.
+ - RELAY-ENDPOINT-SREF: Sturdyref of the endpoint we will communicate with
+ - RELAY-CONTROLLER-SREF: Strudyref of the controller which we use to pilot the
+   relay we communicate through."
+  ;; The not-e2ee relay netlayer
   (define self (spawn ^cell))
-  (define netlayer (spawn ^prelay-netlayer* self enliven controller-sref endpoint-sref))
-  ($ self netlayer)
-  netlayer)
+  (define underlay-netlayer
+    (let ((enliven (facet mycapn 'enliven)))
+      (spawn ^underlay-netlayer self enliven controller-sref endpoint-sref)))
+  ($ self underlay-netlayer)
+  ($ mycapn 'install-netlayer underlay-netlayer)
+  (spawn ^noise-netlayer underlay-netlayer #:name 'relay #:mycapn mycapn))
 
-;;; Helpers for the ^prelay-controller machinery.
+;;; Helpers for the ^relay-controller machinery.
 ;;; The following code is used for both outgoing and incoming connections
 ;;; but is used a little bit differently.
 
@@ -441,12 +425,12 @@ Takes three arguments at spawn time:
         (put-message incoming-enq-ch the-eof-object)
         (bcom closed-beh))))
     (define closed-beh
-      (lambda _ (error "Prelay session closed")))
+      (lambda _ (error "Relay session closed")))
     main-beh)
   (define client-deliver-in (spawn ^client-deliver-in))
   (values client-deliver-in incoming-deq-ch incoming-stop?))
 
-(define (spawn-message-io incoming-deq-ch session-prelay-outgoing)
+(define (spawn-message-io incoming-deq-ch session-relay-outgoing)
   (define incoming (spawn ^io incoming-deq-ch))
   (define (^message-io _bcom)
     (methods
@@ -458,24 +442,14 @@ Takes three arguments at spawn time:
              [msg (syrup-decode msg #:unmarshallers unmarshallers)])))]
      [(write-message msg marshallers)
       (define encoded-msg (syrup-encode msg #:marshallers marshallers))
-      (<-np session-prelay-outgoing 'deliver encoded-msg)]))
+      (<-np session-relay-outgoing 'deliver encoded-msg)]))
   (spawn ^message-io))
 
-(define prelay-env
+(define relay-env
   (make-persistence-env
-   `((((goblins ocapn netlayer prelay) ^swappable-forwarder) ,^swappable-forwarder)
-     (((goblins ocapn netlayer prelay) ^swappable-promise) ,^swappable-promise)
-     (((goblins ocapn netlayer prelay) ^prelay-endpoint) ,^prelay-endpoint)
-     (((goblins ocapn netlayer prelay) ^prelay-controller) ,^prelay-controller)
-     (((goblins ocapn netlayer prelay) ^prelay-netlayer) ,^prelay-netlayer*))
+   `((((goblins ocapn netlayer relay) ^swappable-forwarder) ,^swappable-forwarder)
+     (((goblins ocapn netlayer relay) ^swappable-promise) ,^swappable-promise)
+     (((goblins ocapn netlayer relay) ^relay-endpoint) ,^relay-endpoint)
+     (((goblins ocapn netlayer relay) ^relay-controller) ,^relay-controller)
+     (((goblins ocapn netlayer relay) ^underlay-netlayer) ,^relay-netlayer))
    #:extends (list cell-env facet-env)))
-
-;; Deprecation
-(define (prelay-sturdyref->prelay-node endpoint-sref)
-  (issue-deprecation-warning
-   "prelay-sturdyref->prelay-node is deprecated in favor of prelay-sturdyref->prelay-peer")
-  (prelay-sturdyref->prelay-peer endpoint-sref))
-(define (prelay-node->prelay-sturdyref node)
-  (issue-deprecation-warning
-   "prelay-node->prelay-sturdyref is deprecated in favor of prelay-peer->prelay-sturdyref")
-  (prelay-peer->prelay-sturdyref node))

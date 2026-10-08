@@ -88,8 +88,8 @@ SOURCES = goblins.scm \
           goblins/ocapn/netlayer/onion-socks.scm \
           goblins/ocapn/netlayer/onion.scm \
           goblins/ocapn/netlayer/libp2p.scm \
-          goblins/ocapn/netlayer/prelay.scm \
-          goblins/ocapn/netlayer/prelay-utils.scm \
+          goblins/ocapn/netlayer/relay.scm \
+          goblins/ocapn/netlayer/relay-utils.scm \
           goblins/ocapn/netlayer/tcp-tls.scm \
           goblins/ocapn/netlayer/testuds.scm \
           goblins/ocapn/netlayer/utils.scm \
@@ -146,8 +146,8 @@ TESTS = tests/actor-lib/test-cell.scm \
         tests/ocapn/netlayer/test-fake.scm \
         tests/ocapn/netlayer/test-websocket.scm \
         tests/ocapn/netlayer/test-libp2p.scm \
-        tests/ocapn/netlayer/test-prelay.scm \
-        tests/ocapn/netlayer/test-prelay-utils.scm \
+        tests/ocapn/netlayer/test-relay.scm \
+        tests/ocapn/netlayer/test-relay-utils.scm \
         tests/persistence-store/test-bloblin.scm \
         tests/persistence-store/test-syrup.scm \
         tests/persistence-store/test-memory.scm \
@@ -217,7 +217,7 @@ EXAMPLES = examples/cauldron.scm		\
            examples/try-captp-onion.scm		\
            examples/try-base-netlayer.scm	\
            examples/try-noise.scm \
-           examples/prelay-server.scm \
+           examples/relay-server.scm \
            examples/unix-domain-socket-server.scm
 
 EXTRA_DIST += README.org \
