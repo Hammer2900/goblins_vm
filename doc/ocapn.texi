@@ -498,8 +498,8 @@ Services}), we could share a greeter actor like this:
 The first string of letters and numbers after ``ocapn://'' is part of
 the Tor address.  The last one, though, is a @emph{swiss-num} generated
 during object registration to uniquely identify that object.
-@xref{Nonce Registry}.  Because a swiss-num is a capability and part of
-a sturdyref, all one must do to enliven Alice on a remote machine with a
+@xref{Registry}.  Because a swiss-num is a capability and part of a
+sturdyref, all one must do to enliven Alice on a remote machine with a
 similarly-configured @code{^mycapn} is provide that sturdyref:
 
 @lisp

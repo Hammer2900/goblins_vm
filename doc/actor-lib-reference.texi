@@ -11,7 +11,7 @@ actor model patterns.
 * Joiners::
 * On::
 * Methods::
-* Nonce Registry::
+* Registry::
 * Opportunistic::
 * Pubsub::
 * Pushdown::
@@ -837,16 +837,16 @@ methods directly, as in:
 
 @end deffn
 
-@node Nonce Registry
-@section Nonce Registry
+@node Registry
+@section Registry
 
-The @code{(goblins actor-lib nonce-registry)} module provides an actor
-to store and retrieve references using @emph{swiss-num}s.  A
+The @code{(goblins actor-lib registry)} module provides an actor to
+store and retrieve references using @emph{swiss-num}s.  A
 @dfn{swiss-num} is a string of digits which grants anyone with that
 string of digits access to whatever it refers to, much as a Swiss bank
 account number grants access to the bank account (hence the name).
 
-@deffn {Procedure} spawn-nonce-registry-and-locator
+@deffn {Procedure} spawn-registry-and-locator
 
 Create and return, as @code{values}, an actor which registers and an
 actor which locates objects using Swiss nums.
@@ -863,9 +863,9 @@ To clarify, here's an example:
 
 @lisp
 > (use-modules (goblins actor-lib cell))
-> (define-values (nr nr-locator) (spawn-nonce-registry-and-locator))
+> (define-values (nr nr-locator) (spawn-registry-and-locator))
 > nr
-=> #<local-object ^nonce-registry>
+=> #<local-object ^registry>
 > (define chest (spawn ^cell 'gold))
 > (define chest-token ($ nr 'register chest))
 > chest-token
@@ -878,7 +878,7 @@ To clarify, here's an example:
 
 @end deffn
 
-@defvr {Persistence Environment} nonce-registry-env
+@defvr {Persistence Environment} registry-env
 @end defvr
 
 @node Opportunistic

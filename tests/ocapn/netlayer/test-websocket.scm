@@ -1,7 +1,7 @@
 (define-module (tests ocapn netlayer test-websocket)
   #:use-module (goblins)
   #:use-module (goblins vat)
-  #:use-module (goblins actor-lib nonce-registry)
+  #:use-module (goblins actor-lib registry)
   #:use-module (goblins ocapn captp)
   #:use-module (goblins ocapn netlayer websocket)
   #:use-module (goblins persistence-store memory)
@@ -61,7 +61,7 @@
                   (namespace-env
                    '(tests ocapn netlayer test-websocket)
                    ^greeter)
-                  nonce-registry-env
+                  registry-env
                   captp-env
                   websocket-netlayer-env))
                 ((server-vat server-mycapn server-netlayer)

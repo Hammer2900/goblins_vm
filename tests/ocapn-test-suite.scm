@@ -155,32 +155,32 @@
       ['onion
        (spawn ^onion-netlayer)]))
   (define mycapn (spawn-mycapn testing-netlayer))
-  (define nonce-registry ($ mycapn 'get-registry))
+  (define registry ($ mycapn 'get-registry))
 
   (define car-factory-builder (spawn ^car-factory-builder))
   (define car-factory-builder-swiss-num
     (string->bytevector "JadQ0++RzsD4M+40uLxTWVaVqM10DcBJ" "ascii"))
-  ($ nonce-registry 'register car-factory-builder car-factory-builder-swiss-num)
+  ($ registry 'register car-factory-builder car-factory-builder-swiss-num)
 
   (define echo (spawn ^echo))
   (define echo-swiss-num
     (string->bytevector "IO58l1laTyhcrgDKbEzFOO32MDd6zE5w" "ascii"))
-  ($ nonce-registry 'register echo echo-swiss-num)
+  ($ registry 'register echo echo-swiss-num)
 
   (define greeter (spawn ^greeter))
   (define greeter-swiss-num
     (string->bytevector "VMDDd1voKWarCe2GvgLbxbVFysNzRPzx" "ascii"))
-  ($ nonce-registry 'register greeter greeter-swiss-num)
+  ($ registry 'register greeter greeter-swiss-num)
 
   (define promise-resolver (spawn ^promise-resolver))
   (define promise-resolver-swiss-num
     (string->bytevector "IokCxYmMj04nos2JN1TDoY1bT8dXh6Lr" "ascii"))
-  ($ nonce-registry 'register promise-resolver promise-resolver-swiss-num)
+  ($ registry 'register promise-resolver promise-resolver-swiss-num)
 
   (define sturdyref-provider (spawn ^sturdyref-provider mycapn))
   (define sturdyref-provider-swiss-num
     (string->bytevector "gi02I1qghIwPiKGKleCQAOhpy3ZtYRpB" "ascii"))
-  ($ nonce-registry 'register sturdyref-provider sturdyref-provider-swiss-num)
+  ($ registry 'register sturdyref-provider sturdyref-provider-swiss-num)
 
   (on (<- testing-netlayer 'our-location)
       (lambda (loc)

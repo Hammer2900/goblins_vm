@@ -429,9 +429,9 @@
   (on echo-sref
       (lambda (echo-sturdyref)
         (let ((echo-swiss-num (ocapn-sturdyref-swiss-num echo-sturdyref))
-              (nonce-registry ($ a-mycapn 'get-registry))
+              (registry ($ a-mycapn 'get-registry))
               (echo (spawn ^echo)))
-          ($ nonce-registry 'register echo echo-swiss-num)))))
+          ($ registry 'register echo echo-swiss-num)))))
 
 (test-equal "Can re-enliven echo-sref and use it after connection breakage"
   #(ok reconnected)
