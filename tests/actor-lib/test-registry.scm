@@ -1,5 +1,5 @@
 ;;; Copyright 2023 Juliana Sims
-;;; Copyright 2024 Jessica Tallon
+;;; Copyright 2024-2026 Jessica Tallon
 ;;;
 ;;; Licensed under the Apache License, Version 2.0 (the "License");
 ;;; you may not use this file except in compliance with the License.
@@ -13,14 +13,14 @@
 ;;; See the License for the specific language governing permissions and
 ;;; limitations under the License.
 
-(define-module (tests actor-lib test-swappable)
+(define-module (tests actor-lib test-registry)
   #:use-module (goblins core)
   #:use-module (goblins define-actor)
-  #:use-module (goblins actor-lib nonce-registry)
+  #:use-module (goblins actor-lib registry)
   #:use-module (tests utils)
   #:use-module (srfi srfi-64))
 
-(test-begin "test-nonce-registry")
+(test-begin "test-registry")
 
 (define am (make-actormap))
 (define-actor (^person _bcom name)
@@ -36,7 +36,7 @@
   (actormap-run!
    am
    (lambda ()
-     (spawn-nonce-registry-and-locator))))
+     (spawn-registry-and-locator))))
 
 (define alice-swiss-num
   (actormap-poke!
@@ -75,8 +75,8 @@
 ;; Persistence
 (define env
   (make-persistence-env
-   `((((tests actor-lib test-nonce-registry) ^person) ,^person))
-   #:extends nonce-registry-env))
+   `((((tests actor-lib test-registry) ^person) ,^person))
+   #:extends registry-env))
 (define-values (am* registry* alice* bob*)
   (persist-and-restore am env registry alice bob))
 (test-eq "Alice can be looked up in registry after rehydration"
@@ -87,4 +87,4 @@
   bob*
   (actormap-peek am* registry* 'fetch bob-swiss-num))
 
-(test-end "test-nonce-registry")
+(test-end "test-registry")

@@ -33,7 +33,7 @@
   #:use-module (goblins actor-lib common)
   #:use-module (goblins actor-lib methods)
   #:use-module (goblins actor-lib joiners)
-  #:use-module (goblins actor-lib nonce-registry)
+  #:use-module (goblins actor-lib registry)
   #:use-module (goblins actor-lib swappable)
   #:use-module (goblins actor-lib ward)
   #:use-module (goblins utils assert-type)
@@ -1151,8 +1151,8 @@
       (netlayer
        (on (<- netlayer 'our-location)
            (lambda (peer-loc)
-             (define nonce ($$ registry 'register obj))
-             (make-ocapn-sturdyref peer-loc nonce))
+             (define swiss-num ($$ registry 'register obj))
+             (make-ocapn-sturdyref peer-loc swiss-num))
            #:promise? #t))))
   (define (enliven sturdyref-vow)
     (on sturdyref-vow
@@ -1436,8 +1436,7 @@
         #:promise? #t)]
    [register register]
    [enliven enliven]
-   ;; Get the nonce registry used for sturdyrefs to be able to tweak
-   ;; it directly.
+   ;; Get the registry used for sturdyrefs to be able to tweak it directly.
    [(get-registry) registry]))
 
 (define* (spawn-mycapn #:rest netlayers)
@@ -1454,7 +1453,7 @@
   ;; TODO: Eventually... well this whole sturdyref nonsense we want
   ;; to make more configurable
   (define-values (registry locator)
-    (spawn-nonce-registry-and-locator))
+    (spawn-registry-and-locator))
 
   ;; Selfish spawn
   (let* ((self (spawn ^cell))
@@ -1465,4 +1464,4 @@
 (define captp-env
   (make-persistence-env
    `((((goblins ocapn captp) ^mycapn) ,^mycapn))
-   #:extends (list cell-env common-env nonce-registry-env)))
+   #:extends (list cell-env common-env registry-env)))

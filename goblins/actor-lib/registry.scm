@@ -1,6 +1,6 @@
 ;;; Copyright 2020-2021 Christine Lemmer-Webber
 ;;; Copyright 2023 Juliana Sims
-;;; Copyright 2024 Jessica Tallon
+;;; Copyright 2024-2026 Jessica Tallon
 ;;;
 ;;; Licensed under the Apache License, Version 2.0 (the "License");
 ;;; you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@
 ;;; See the License for the specific language governing permissions and
 ;;; limitations under the License.
 
-(define-module (goblins actor-lib nonce-registry)
+(define-module (goblins actor-lib registry)
   #:use-module (goblins core)
   #:use-module (goblins define-actor)
   #:use-module (goblins utils hashmap)
@@ -25,16 +25,16 @@
   #:use-module (goblins contrib base64)
   #:use-module (ice-9 match)
   #:use-module (scheme base) ;; bytevector-append
-  #:export (spawn-nonce-registry-and-locator
-            nonce-registry-env))
+  #:export (spawn-registry-and-locator
+            registry-env))
 
 (define (make-swiss-num)
   (strong-random-bytes 32))
 
 (define (refr->storable-id local-refr)
   "Convert a local-refr to a persistence object identifier."
-  ;; If the nonce registry stored and restored by the persistence system then
-  ;; local refrs would be woken up as promises for far local-refrs. This causes
+  ;; If the registry stored and restored by the persistence system then local
+  ;; refrs would be woken up as promises for far local-refrs. This causes
   ;; problems for looking them up in the future as the refr and promise won't be
   ;; either equal or eq and we can't block all lookups until every promise is
   ;; resolved. The solution, convert them to persistence object identifiers so
@@ -43,12 +43,12 @@
       (local-refr->persistable-object-identifier local-refr)
       local-refr))
 
-(define-actor (^nonce-registry bcom
-                               #:optional
-                               [swiss-num->refr (make-ghash)]
-                               [storable-id->swiss-num (make-ghash)]
-                               [hash-algorithm 'sha256]
-                               [salt (make-swiss-num)])
+(define-actor (^registry bcom
+                         #:optional
+                         [swiss-num->refr (make-ghash)]
+                         [storable-id->swiss-num (make-ghash)]
+                         [hash-algorithm 'sha256]
+                         [salt (make-swiss-num)])
   #:frozen
   (define hash-func
     (match hash-algorithm
@@ -68,9 +68,9 @@
            (new-swiss-num->refr (hashmap-set swiss-num->refr hashed-swiss-num refr))
            (new-storable-id->swiss-num
             (hashmap-set storable-id->swiss-num storable-id new-swiss-num)))
-      (bcom (^nonce-registry bcom new-swiss-num->refr
-                             new-storable-id->swiss-num
-                             hash-algorithm salt) new-swiss-num)))
+      (bcom (^registry bcom new-swiss-num->refr
+                       new-storable-id->swiss-num
+                       hash-algorithm salt) new-swiss-num)))
   (define* (register refr #:optional provided-swiss-num)
     (assert-type refr live-refr?)
     (match (hashmap-ref storable-id->swiss-num (refr->storable-id refr) #f)
@@ -95,35 +95,39 @@
        (let ((hashed-swiss-num (hash swiss-num)))
          (hashmap-ref swiss-num->refr hashed-swiss-num dflt))])]))
 
-(define-actor (^nonce-locator bcom registry)
+(define-actor (^locator bcom registry)
   (methods
    [(fetch swiss-num)
     ($ registry 'fetch swiss-num)]))
 
-(define (spawn-nonce-registry-and-locator)
-  "Return a new Nonce-Registry and Nonce-Locator.
+(define (spawn-registry-and-locator)
+  "Return a new Registry and Locator.
 
-A Nonce-Registry is an object containing Swiss numbers, unique IDs
-which provide access to some capability analogously to a Swiss bank
-account number. A Nonce-Locator is a proxy object granting access to
-but not storage of Swiss numbers in its related Nonce-Registry.
+A Registry is an object containing Swiss numbers, unique IDs which provide
+access to some capability analogously to a Swiss bank account number. A Locator
+is a proxy object granting access to but not storage of Swiss numbers in its
+related Registry.
 
-Nonce-Registry Methods:
+Registry Methods:
 `register refr [provided-swiss-num]': Add REFR to the registry using
 PROVIDED-SWISS-NUM or a newly-generated one; return the swiss-num.
 `fetch swiss-num [dflt]': Return the object associated with SWISS-NUM if
 it exists, or DFLT if it is provided and the SWISS-NUM is not registered.
 If DFLT is not provided and SWISS-NUM is not registered, error.
 
-Nonce-Locator Methods:
+Locator Methods:
 `fetch swiss-num': Return the object associated with SWISS-NUM.
 
-Type: -> (Values Nonce-Registry Nonce-Locator)"
-  (let* ((registry (spawn-named 'nonce-registry ^nonce-registry))
-         (locator (spawn-named 'nonce-locator ^nonce-locator registry)))
+Type: -> (Values Registry Locator)"
+  (let* ((registry (spawn-named 'registry ^registry))
+         (locator (spawn-named 'locator ^locator registry)))
     (values registry locator)))
 
-(define nonce-registry-env
+(define registry-env
   (make-persistence-env
-   `((((goblins actor-lib nonce-registry) ^nonce-locator) ,^nonce-locator)
-     (((goblins actor-lib nonce-registry) ^nonce-registry) ,^nonce-registry))))
+   ;; The nonce registry are the old names for the objects.
+   `((((goblins actor-lib nonce-registry) ^nonce-locator) ,^locator)
+     (((goblins actor-lib nonce-registry) ^nonce-registry) ,^registry)
+     ;; These are the current names:
+     (((goblins actor-lib registry) ^locator) ,^locator)
+     (((goblins actor-lib registry) ^registry) ,^registry))))
