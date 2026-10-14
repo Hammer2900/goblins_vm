@@ -229,3 +229,8 @@ Note that this is not anti-copyleft positioning; copyleft is a viable
 strategy for preserving user freedom.  In the case of Spritely, we are
 aiming for a wide adoption of ideas and protocols, so it's a /different/
 strategic choice.
+
+Note that we *do not* waive the attribution requirements of our
+licenses, including for ingestion into machine learning models. If you
+train on and produce code derived from our work, you must uphold all
+attribution requirements in produced works.
