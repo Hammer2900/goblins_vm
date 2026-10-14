@@ -18,17 +18,19 @@
           capture-current-stack)
   (cond-expand
    (hoot
-    (import (guile)
-            ;; guard isn't used in core.scm, and it's used in
-            ;; hoot error-handling) so it causes issues trying
-            ;; to import it here. Therefore we skip it.
-            (except (ice-9 exceptions) guard)
+    (import (scheme base)
             (only (hoot exceptions)
+                  exception-with-origin?
+                  exception-origin
                   exception-with-source?
                   exception-source-file
                   exception-source-line
                   exception-source-column)
-            (hoot error-handling)))
+            (only (hoot error-handling)
+                  format-exception
+                  capture-stack
+                  stack-height
+                  print-backtrace)))
    (guile
     (import (guile)
             (ice-9 exceptions))))
@@ -73,7 +75,7 @@
               (print-backtrace stack origin file line column (current-error-port)))))))
       (newline (current-error-port)))
 
-    (define* (capture-current-stack . args)
+    (define (capture-current-stack . args)
       (cond-expand
        (guile (apply make-stack args))
        ;; TODO: Ideally we'd be trimming the stack to get rid
