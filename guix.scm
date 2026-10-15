@@ -79,10 +79,10 @@
             (method git-fetch)
             (uri (git-reference
                   (url "https://codeberg.org/spritely/guile-noise.git")
-                  (commit "7db534e288b5aabc055a3f52606b593e1485c687")))
+                  (commit "542410fd60f454c318f8efae817046d03fa3290d")))
             (sha256
              (base32
-              "1pfjv55qz27p0c2aiakmxj1m2jfss3cz5bdkn2v1157kiwwzq5sb"))))
+              "1bwi9kasm146sgwqjgmgclwlzvyan8738xdwmcivkjy380zdnlny"))))
    (build-system gnu-build-system)
    (native-inputs (list autoconf automake pkg-config))
    (inputs (list guile-next guile-hoot*
