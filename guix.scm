@@ -81,8 +81,7 @@
                   (url "https://codeberg.org/spritely/guile-noise.git")
                   (commit "542410fd60f454c318f8efae817046d03fa3290d")))
             (sha256
-             (base32
-              "1bwi9kasm146sgwqjgmgclwlzvyan8738xdwmcivkjy380zdnlny"))))
+             (base32 "1bwi9kasm146sgwqjgmgclwlzvyan8738xdwmcivkjy380zdnlny"))))
    (build-system gnu-build-system)
    (native-inputs (list autoconf automake pkg-config))
    (inputs (list guile-next guile-hoot*

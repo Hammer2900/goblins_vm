@@ -22,3 +22,4 @@ doc/*.info
 /doc/goblins.html/
 /goblins/config.scm
 /js/reflect.js
+/scripts/relay-server

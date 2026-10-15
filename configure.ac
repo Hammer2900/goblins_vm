@@ -15,6 +15,7 @@ AC_PROG_LN_S
 
 AC_CONFIG_FILES([Makefile goblins/config.scm])
 AC_CONFIG_FILES([pre-inst-env], [chmod +x pre-inst-env])
+AC_CONFIG_FILES([scripts/relay-server], [chmod +x scripts/relay-server])
 
 dnl Search for 'guile' and 'guild'.  This macro defines
 dnl 'GUILE_EFFECTIVE_VERSION'.

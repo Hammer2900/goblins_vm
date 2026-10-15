@@ -22,6 +22,7 @@
   #:use-module (goblins ocapn netlayer relay)
   #:use-module (goblins actor-lib joiners)
   #:use-module (goblins actor-lib facet)
+  #:use-module (goblins actor-lib on)
   #:use-module (tests utils)
   #:use-module (ice-9 match)
   #:use-module (srfi srfi-11)
@@ -83,35 +84,41 @@
 ;;; Now to create the relay and register it with Alice and Bob's MyCapN object.
 (define a-relay-netlayer
   (with-vat a-vat
-    (spawn ^relay-netlayer
-           (spawn-mycapn a-netlayer)
-           ra-endpoint-sref
-           ra-controller-sref)))
+    (let-on ((ra-endpoint-sref ra-endpoint-sref)
+             (ra-controller-sref ra-controller-sref))
+      (spawn ^relay-netlayer
+             (spawn-mycapn a-netlayer)
+             ra-endpoint-sref
+             ra-controller-sref))))
 
 (define a-mycapn
   (with-vat a-vat
-    (spawn-mycapn a-relay-netlayer)))
+    (let-on ((a-relay-netlayer a-relay-netlayer))
+      (spawn-mycapn a-relay-netlayer))))
 
 (define b-relay-netlayer
   (with-vat b-vat
-    (spawn ^relay-netlayer
-           (spawn-mycapn b-netlayer)
-           rb-endpoint-sref
-           rb-controller-sref)))
+    (let-on ((rb-endpoint-sref rb-endpoint-sref)
+             (rb-controller-sref rb-controller-sref))
+      (spawn ^relay-netlayer
+             (spawn-mycapn b-netlayer)
+             rb-endpoint-sref
+             rb-controller-sref))))
 
 (define b-mycapn
   (with-vat b-vat
-    (spawn-mycapn b-relay-netlayer)))
+    (let-on ((b-relay-netlayer b-relay-netlayer))
+      (spawn-mycapn b-relay-netlayer))))
 
 (define bob-greeter-sref
   (with-vat b-vat
-    ($ b-mycapn 'register bob-greeter 'relay)))
+    (<- b-mycapn 'register bob-greeter 'relay)))
 
 (test-assert "Relay netlayer sturdyref resolves to a remote reference"
   (match (resolve-vow-and-return-result
           a-vat
           (lambda ()
-            ($ a-mycapn 'enliven bob-greeter-sref)))
+            (<- a-mycapn 'enliven bob-greeter-sref)))
     (#(ok (? remote-object-refr?)) #t)
     (_ #f)))
 
@@ -119,7 +126,7 @@
   (match (resolve-vow-and-return-result
           a-vat
           (lambda ()
-            (<- ($ a-mycapn 'enliven bob-greeter-sref) "Alice")))
+            (<- (<- a-mycapn 'enliven bob-greeter-sref) "Alice")))
     (#(ok "Hello Alice, my name is Bob!") #t)
     (_ #f)))
 
@@ -127,25 +134,31 @@
   "Sets up both own relay server and relay client"
   (define-values (vat loc netlayer)
     (spawn-vat-in-fakenl (string-append "relay-" name)))
-  (define mycapn (with-vat vat (spawn-mycapn netlayer)))
+  (define mycapn
+    (with-vat vat
+      (let-on ((netlayer netlayer))
+        (spawn-mycapn netlayer))))
   (define-values (endpoint controller)
     (with-vat vat
       (spawn-relay-pair (spawn ^facet mycapn 'enliven))))
   (define-values (endpoint-sref controller-sref)
     (with-vat vat
-      (values ($ mycapn 'register endpoint 'fake)
-              ($ mycapn 'register controller 'fake))))
+      (values (<- mycapn 'register endpoint 'fake)
+              (<- mycapn 'register controller 'fake))))
   (define-values (client-vat client-loc client-netlayer)
     (spawn-vat-in-fakenl (string-append "client-" name)))
   (define relay-netlayer
     (with-vat client-vat
-      (spawn ^relay-netlayer
-             (spawn-mycapn client-netlayer)
-             endpoint-sref
-             controller-sref)))
+      (let-on ((endpoint-sref endpoint-sref)
+               (controller-sref controller-sref))
+        (spawn ^relay-netlayer
+               (spawn-mycapn client-netlayer)
+               endpoint-sref
+               controller-sref))))
   (define client-mycapn
     (with-vat client-vat
-      (spawn-mycapn relay-netlayer)))
+      (let-on ((relay-netlayer relay-netlayer))
+        (spawn-mycapn relay-netlayer))))
   (values client-vat client-mycapn client-netlayer netlayer))
 
 
@@ -161,7 +174,7 @@
 
 (define c-greeter-sref-vow
   (with-vat c-vat
-    ($ c-mycapn 'register c-greeter 'relay)))
+    (<- c-mycapn 'register c-greeter 'relay)))
 
 (define d-greeter-vow
   (with-vat d-vat
@@ -171,7 +184,7 @@
   (match (resolve-vow-and-return-result
           d-vat
           (lambda ()
-            ($ d-mycapn 'enliven c-greeter-sref-vow)))
+            (<- d-mycapn 'enliven c-greeter-sref-vow)))
     (#(ok (? remote-object-refr?)) #t)
     (_ #f)))
 
@@ -179,7 +192,7 @@
   (match (resolve-vow-and-return-result
           d-vat
           (lambda ()
-            (<- ($ d-mycapn 'enliven c-greeter-sref-vow) "Debra")))
+            (<- (<- d-mycapn 'enliven c-greeter-sref-vow) "Debra")))
     (#(ok "Hello Debra, my name is Carol!") #t)
     (_ #f)))
 
@@ -353,13 +366,16 @@
   (spawn-vat-in-fakenl "reconnect-netlayer"))
 (define reconnect-relay-netlayer
   (with-vat reconnect-client-vat
-    (spawn ^relay-netlayer
-           (spawn-mycapn reconnect-client-netlayer)
-           reconnect-endpoint-sref
-           reconnect-controller-sref)))
+    (let-on ((reconnect-endpoint-sref reconnect-endpoint-sref)
+             (reconnect-controller-sref reconnect-controller-sref))
+      (spawn ^relay-netlayer
+             (spawn-mycapn reconnect-client-netlayer)
+             reconnect-endpoint-sref
+             reconnect-controller-sref))))
 (define reconnect-client-mycapn
   (with-vat reconnect-client-vat
-    (spawn-mycapn reconnect-relay-netlayer)))
+    (let-on ((reconnect-relay-netlayer reconnect-relay-netlayer))
+      (spawn-mycapn reconnect-relay-netlayer))))
 
 ;; Make an object that we will be able to connect to.
 (define reconnect-greeter
@@ -368,7 +384,7 @@
 
 (define reconnect-greeter-sref
   (with-vat reconnect-client-vat
-    ($ reconnect-client-mycapn 'register reconnect-greeter 'relay)))
+    (<- reconnect-client-mycapn 'register reconnect-greeter 'relay)))
 
 ;; To properly test we've reconnected later on, we of course need to connect
 ;; first to ensure there actually is a connection between

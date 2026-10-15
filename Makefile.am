@@ -8,7 +8,7 @@
 ## No attribution is required and you are free to copy-paste and munge
 ## into your own project.
 
-bin_SCRIPTS =
+bin_SCRIPTS = scripts/relay-server
 
 # Handle substitution of fully-expanded Autoconf variables.
 do_subst = $(SED)					\
@@ -81,6 +81,7 @@ SOURCES = goblins.scm \
           goblins/ocapn/captp-types.scm \
           goblins/ocapn/gc.scm \
           goblins/ocapn/ids.scm \
+          goblins/ocapn/relay-server.scm \
           goblins/ocapn/netlayer/base-port.scm \
           goblins/ocapn/netlayer/fake.scm \
           goblins/ocapn/netlayer/websocket.scm \
@@ -258,7 +259,11 @@ clean-go:
 CLEANFILES =					\
   $(GOBJECTS)					\
   $(TESTS:tests/%.scm=%.log) \
-  $(TESTS:%.scm=%.xml)
+  $(TESTS:%.scm=%.xml)  \
+  $(bin_SCRIPTS)
+
+# It needs to be installed but nothing further.
+scripts/relay-server: ;
 
 if HAVE_HOOT
 

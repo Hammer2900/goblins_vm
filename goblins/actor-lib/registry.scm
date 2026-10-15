@@ -24,7 +24,7 @@
   #:use-module (goblins utils crypto)
   #:use-module (goblins contrib base64)
   #:use-module (ice-9 match)
-  #:use-module (scheme base) ;; bytevector-append
+  #:use-module ((scheme base) #:select (bytevector-append))
   #:export (spawn-registry-and-locator
             registry-env))
 
@@ -77,23 +77,34 @@
       [#f (register-refr-new refr provided-swiss-num)]
       [swiss-num swiss-num]))
   (methods
-   [register register]
-   [fetch
+   (register register)
+   ((remove refr)
+    (define storable-id (refr->storable-id refr))
+    (match (hashmap-ref storable-id->swiss-num storable-id)
+      (#f  (error "Refr not registered with registry" refr))
+      (swiss-num
+       (let ((hashed-swiss-num (hash swiss-num)))
+         (bcom (^registry bcom
+                          (hashmap-remove swiss-num->refr hashed-swiss-num)
+                          (hashmap-remove storable-id->swiss-num storable-id)
+                          hash-algorithm
+                          salt))))))
+   (fetch
     (case-lambda
-      [(swiss-num)
+      ((swiss-num)
        (let ((hashed-swiss-num (hash swiss-num)))
          ;; TODO: Better errors when no swiss num
          (match (hashmap-ref swiss-num->refr hashed-swiss-num)
-           [#f
+           (#f
             (throw 'no-such-key
                    (format #f "No object registered with swiss-num: ~a"
                            (base64-encode swiss-num
                                           #:alphabet base64-url-alphabet
-                                          #:padding? #f)))]
-           [refr refr]))]
-      [(swiss-num dflt)
+                                          #:padding? #f))))
+           (refr refr))))
+      ((swiss-num dflt)
        (let ((hashed-swiss-num (hash swiss-num)))
-         (hashmap-ref swiss-num->refr hashed-swiss-num dflt))])]))
+         (hashmap-ref swiss-num->refr hashed-swiss-num dflt)))))))
 
 (define-actor (^locator bcom registry)
   (methods

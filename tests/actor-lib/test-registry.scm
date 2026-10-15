@@ -72,6 +72,13 @@
   'i-am-bob
   (actormap-peek am (actormap-peek am locator 'fetch bob-swiss-num)))
 
+(define carol (actormap-spawn! am ^person 'i-am-carol))
+(define carol-swiss-num (actormap-poke! am registry 'register carol))
+(actormap-poke! am registry 'remove carol)
+(test-equal "deletion removes a object from the registry"
+  #f
+  (actormap-peek am registry 'fetch carol-swiss-num #f))
+
 ;; Persistence
 (define env
   (make-persistence-env

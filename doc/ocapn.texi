@@ -1034,60 +1034,110 @@ many ways this could be done, however other relay server designs are
 left to the reader to build. The relay utilities are available in the
 @code{(goblins ocapn netlayer relay-utils)} module, and an example of
 how to use them to run a daemon can be found in
-@code{examples/relay-server.scm}, as shipped with Spritely Goblins.
+@code{scripts/relay-server.in}, as shipped with Spritely Goblins.
 
 @code{(goblins ocapn netlayer relay-utils)} provides the following
 procedures:
 
-@deffn {Constructor} ^relay-admin bcom enliven register
+@deffn {Constructor} ^relay-admin bcom warden mycapn @
+                                  client-netlayer-name @
+                                  federation-netlayer-name @
+                                  #:allow-registration? @
+                                  #:allow-ephemeral-accounts? @
+                                  #:ephemeral-account-lifespan
 
 This constructs an admin actor to manage relay accounts. This is to be
 used on the ``server'' side.
 
-It takes two arguments: @var{enliven} which is a facet object that
-when provided the symbol @code{'enliven} followed by a OCapN sturdyref
-returns a vow of the enlivened sturdyref. It also takes @var{register}
-which when provided an object will make that object available at a
-given sturdyref and return that to the caller. Both of these are
-likely facets of the Mycapn object.
-
-The admin object itself has two methods, those are:
+It takes several arguments, these are as follows:
 
 @itemize
 @item
-@code{add-account} which takes a name of an account and returns a
-sturdyref. This sturdyref is designed to be given to the user who is
-controlling the relay account. The user can then enliven said
-sturdyref and send a message to the enlivened object to get the relay
-endpoint and relay controller objects.
-
+@var{warden} A warden object, likely from
+@code{(goblins actor-lib ward} which will be used to protect the admin
+behaviour.
 @item
-@code{get-accounts} which provides a list of all account names
-registered with this relay admin.
+@var{mycapn} This is an instance of the Mycapn object. This should
+have both the @var{client-netlayer-name} and
+@var{federation-netlayer-name} netlayers registered with it. It's
+designed to be used exclusively with the relay.
+@item
+@var{client-netlayer-name} The name of the netlayer (symbol) which the
+clients will use to connect with the relay.
+@item
+@var{federation-netlayer-name} The name of the netlayer (symbol) which
+other relays will use to connect with the relay.
+@item
+@var{#:allow-registration?} configures if public registrations are
+enabled or not. When set to @code{#t} the public @code{register}
+behaviour is enabled allowing new accounts to be registered. Defaults
+to @code{#f}.
+@item
+@var{#:allow-ephemeral-accounts?} configures if ephemeral accounts can
+be registered on this relay. When set to @code{#t} the public
+@code{register-ephemeral} method is enabled allowing new ephemeral
+accounts to be registered. Defaults to @code{#f}.
+@item
+@var{#:ephemeral-account-lifespan} when
+@var{allow-ephemeral-accounts?} is enabled, the ephemeral accounts
+will be removed after @var{ephemeral-account-lifespan} seconds.
 @end itemize
 
+The object provides many methods, some of which are considered admin
+methods and protected behind the @var{warden} provided. The methods
+are:
+
+Admin:
+
+@itemize
+@item
+@code{register-account label} Register a new account with the given label. It
+will return a sturdyref to a cell containing the endpoint and controller
+sturdyrefs registered against the @var{client-netlayer-name} netlayer.
+@item
+@code{remove-account label} Remove the account associated with the @var{label}.
+@item
+@code{get-accounts} Returns a hashmap containing the accounts with some account
+data.
+@item
+@code{configure #:allow-registrations? #:allow-ephemeral-accounts? #:ephemeral-account-lifespan}
+Reconfigure the admin object to the new settings.
+@end itemize
+
+Remaining behaviour:
+
+@itemize
+@item
+@code{allow-registrations?} Returns if registrations are allowed to be
+registered.
+@item
+@code{allow-ephemeral-accounts?} Returns if ephemeral accoutns are allowed to be
+registered.
+@item
+@code{register} Registers a new account on the relay returning the sturdyref to
+a read-only cell which contains the endpoint and controller sturdyrefs of the
+new account.
+@item
+@code{register-ephemeral} Registers a new ephemeral account returning the
+sturdyref of a read-only cell containing the endpoint and controller sturdyrefs
+of the new account. This account will be removed after the
+@var{ephemeral-account-lifespan} time has elapsed. This should only be used for
+short lived accounts.
+@end itemize
 @end deffn
 
-@deffn {Procedure} fetch-and-spawn-relay-netlayer account-setup-sref @
-                                                  [#:netlayer] @
-                                                  [#:mycapn]
+@deffn {Procedure} fetch-and-spawn-relay-netlayer netlayer mycapn @
+                                                  account-setup-sref
 
-This takes a account setup sturdyref retrieved from the
-@code{add-account} method on the relay admin and returns a
-promise resolving to a freshly spawned relay netlayer.
-This is to be used on the ``client'' side.
 
-By default when using the relay over @ref{Tor Onion Services}
-netlayer, @ref{TCP + TLS} netlayer, or @ref{WebSocket} netlayer, it
-will setup a new netlayer to use to speak with the relay over. If a
-different netlayer is to be used, or any of the default options need
-changing, the netlayer should be setup beforehand and passed in
-through the @var{#:netlayer} argument.
-
-By default it will create a new mycapn, however if one already exists
-for the netlayer specified in @var{#:netlayer}, then you can pass that
-in with the @var{#:mycapn} argument.
-
+This is a helper which will setup a new @code{^relay-netlayer} object
+and return for an account on a relay. The procedure takes two objects
+and a sturdyref. The first object, @var{netlayer}, is the netlayer
+that should be used to retrieve the account information from the relay
+server. The second object, @var{mycapn}, is an instance of the MyCapN
+object with the @var{netlayer} already installed within it. This
+MyCapN object is provided to the relay for its exclusive use. Finally,
+the sturdyref to an account on a relay server.
 @end deffn
 
 @defvr {Persistence Environment} relay-utils-env

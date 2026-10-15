@@ -145,60 +145,66 @@ be fulfilled more than once"
 (define-actor (^relay-endpoint _bcom client-session-listener)
   (lambda (their-relay-in)
     (define our-relay-out (spawn ^session-relay-out their-relay-in))
-    (define our-relay-in-vow
-      (let-on ((client-deliver-incoming
-                (<- client-session-listener 'incoming-session our-relay-out)))
-        (spawn ^session-relay-in client-deliver-incoming)))
-    our-relay-in-vow))
+    (let-on ((client-deliver-incoming
+              (<- client-session-listener 'incoming-session our-relay-out)))
+      (spawn ^session-relay-in client-deliver-incoming))))
 
-(define-actor (^relay-controller _bcom enliven client-session-listener-resolver)
-  (methods
-   ;; Connect to TO-ENDPOINT, which can be a live ref or a sturdyref
-   ((connect to-endpoint deliver-in)
-    ;; TODO: Do we allow deliver-in
-    ;; refr or is it always a sturdyref?
-    ;; TODO: Do we need to transform this peer?
-    (define to-endpoint-vow
-      (<- enliven 'enliven (relay-peer->relay-sturdyref to-endpoint)))
+(define-actor (^relay-controller bcom enliven client-session-listener-resolver
+                                 #:key (enabled? #t))
+  (define (disabled-beh . args)
+    (error "Relay has been disabled"))
+  (define enabled-beh
+    (methods
+     ;; Connect to TO-ENDPOINT, which can be a live ref or a sturdyref
+     ((connect to-endpoint deliver-in)
+      ;; TODO: Do we allow deliver-in
+      ;; refr or is it always a sturdyref?
+      ;; TODO: Do we need to transform this peer?
+      (define to-endpoint-vow
+        (<- enliven 'enliven (relay-peer->relay-sturdyref to-endpoint)))
+      
+      (define our-relay-in
+        (spawn ^session-relay-in deliver-in))
+      (define their-relay-in-vow
+        (<- to-endpoint-vow our-relay-in))
 
-    (define our-relay-in
-      (spawn ^session-relay-in deliver-in))
-    (define their-relay-in-vow
-      (<- to-endpoint-vow our-relay-in))
+      ;; If our connection to our client severs, we need to propagate that to th
+      ;; other relay.
+      (when (remote-refr? deliver-in)
+        (on-sever deliver-in
+                  (lambda (type reason)
+                    ($ client-session-listener-resolver 'reset)
+                    (<-np their-relay-in-vow 'abort))))
 
-    ;; If our connection to our client severs, we need to propagate that to th
-    ;; other relay.
-    (when (remote-refr? deliver-in)
-      (on-sever deliver-in
-                (lambda (type reason)
-                  ($ client-session-listener-resolver 'reset)
-                  (<-np their-relay-in-vow 'abort))))
+      ;; If we loose connection to their prelay, we want to send a sever to the
+      ;; client.
+      (on their-relay-in-vow
+          (lambda (their-relay-in)
+            (when (remote-refr? their-relay-in)
+              (on-sever their-relay-in
+                        (lambda (type reason)
+                          (<-np deliver-in 'abort))))))
 
-    ;; If we loose connection to their prelay, we want to send a sever to the
-    ;; client.
-    (on their-relay-in-vow
-        (lambda (their-relay-in)
-          (when (remote-refr? their-relay-in)
-            (on-sever their-relay-in
-                      (lambda (type reason)
-                        (<-np deliver-in 'abort))))))
-    
-    ;; [Note from cwebber, 2023-07-28:]
-    ;; I'm more confident about doing this particular `on' for message
-    ;; ordering semantics, though it may have been fine to hand the
-    ;; ^session-relay-out their-relay-in-vow... it maybe is!  I'm
-    ;; just doing too much at once to carefully analyze for sure,
-    ;; and ordering guarantees here is pretty essential
-    (define our-relay-out-vow
-      (let-on ((their-relay-in their-relay-in-vow))
-        ;; Spawn our relay out.
-        (spawn ^session-relay-out their-relay-in)))
+      ;; [Note from cwebber, 2023-07-28:]
+      ;; I'm more confident about doing this particular `on' for message
+      ;; ordering semantics, though it may have been fine to hand the
+      ;; ^session-relay-out their-relay-in-vow... it maybe is!  I'm
+      ;; just doing too much at once to carefully analyze for sure,
+      ;; and ordering guarantees here is pretty essential
+      (define our-relay-out-vow
+        (let-on ((their-relay-in their-relay-in-vow))
+          ;; Spawn our relay out.
+          (spawn ^session-relay-out their-relay-in)))
 
-    ;; Hand back the promise which will allow for sending messages
-    ;; once everything is correctly configured
-    our-relay-out-vow)
-   ((set-session-listener session-listener)
-    ($ client-session-listener-resolver 'fulfill session-listener))))
+      ;; Hand back the promise which will allow for sending messages
+      ;; once everything is correctly configured
+      our-relay-out-vow)
+     ((set-session-listener session-listener)
+      ($ client-session-listener-resolver 'fulfill session-listener))))
+
+  (if enabled?
+      enabled-beh
+      disabled-beh))
 
 (define (spawn-relay-pair enliven)
   "Spawn a pair of relay objects: the endpoint (public) and controller (private)
@@ -270,11 +276,9 @@ respectively."
 ;;  - Outgoing messages: These are much easier, as we can simply
 ;;    serialize the message and fire it off to the remote actor.
 (define-actor (^underlay-netlayer bcom self enliven
-                                  relay-endpoint-sref-vow
-                                  relay-controller-sref-vow)
-  (define our-location-vow
-    (let-on ((relay-endpoint-sref relay-endpoint-sref-vow))
-      (relay-sturdyref->relay-peer relay-endpoint-sref)))
+                                  relay-controller-sref
+                                  relay-endpoint-sref)
+  (define our-location (relay-sturdyref->relay-peer relay-endpoint-sref))
 
   (define-values (conn-establisher-vow conn-establisher-resolver)
     (spawn-promise-and-resolver))
@@ -288,8 +292,8 @@ respectively."
     (define controller-vow
       (if wait-time-sec
           (let-on ((_ (timeout wait-time-sec)))
-            (<- enliven 'enliven relay-controller-sref-vow))
-          (<- enliven 'enliven relay-controller-sref-vow)))
+            (<- enliven 'enliven relay-controller-sref))
+          (<- enliven 'enliven relay-controller-sref)))
     (on controller-vow
         (lambda (relay-controller)
           ;; Setup the on-sever to detect when we need to reconnect.
@@ -338,46 +342,33 @@ respectively."
     ;; Tell the remote endpoint that we're looking for incoming connections
     (<-np relay-controller-vow 'set-session-listener listener))
 
-  (define-values (setup-netlayer-vow setup-netlayer-resolver)
-    (spawn-promise-and-resolver))
+  (methods
+   ((netlayer-name) 'underlay)
+   ((our-location) our-location)
+   ((self-location? loc)
+    (same-peer-location? our-location loc))
+   ((setup conn-establisher)
+    ;; Now that we're set up, transition to the main behavior
+    (<-np conn-establisher-resolver 'fulfill conn-establisher))
+   ((connect-to remote-peer)
+    (define-values (deliver-in incoming-deq-ch incoming-stop?)
+      (setup-delivery-agent-and-actor))
 
-  (on our-location-vow
-      (lambda (our-location)
-        ($ setup-netlayer-resolver 'fulfill (spawn ^netlayer our-location))))
+    (let-on ((session-relay-outgoing
+              (<- relay-controller-vow 'connect remote-peer deliver-in)))
+      (define message-io
+        (spawn-message-io incoming-deq-ch session-relay-outgoing))
 
-  (define (^netlayer _bcom our-location)
-    (methods
-     ((netlayer-name) 'underlay)
-     ((our-location) our-location)
-     ((self-location? loc)
-      (same-peer-location? our-location loc))
-     ((setup conn-establisher)
-      ;; Now that we're set up, transition to the main behavior
-      (<-np conn-establisher-resolver 'fulfill conn-establisher))
-     ((connect-to remote-peer)
-      (define-values (deliver-in incoming-deq-ch incoming-stop?)
-        (setup-delivery-agent-and-actor))
+      ;; If our connection to the relay server (i.e. session-relay-outgoing)
+      ;; severs, we need to inform our CapTP of that.
+      (when (remote-refr? session-relay-outgoing)
+        (on-sever session-relay-outgoing
+                  (lambda (type reason)
+                    (<-np deliver-in 'abort))))
 
-      (let-on ((session-relay-outgoing
-                (<- relay-controller-vow 'connect remote-peer deliver-in)))
-        (define message-io
-          (spawn-message-io incoming-deq-ch session-relay-outgoing))
+      (<- conn-establisher-vow message-io remote-peer)))))
 
-        ;; If our connection to the relay server (i.e. session-relay-outgoing)
-        ;; severs, we need to inform our CapTP of that.
-        (when (remote-refr? session-relay-outgoing)
-          (on-sever session-relay-outgoing
-                    (lambda (type reason)
-                      (<-np deliver-in 'abort))))
-
-        (<- conn-establisher-vow message-io remote-peer)))))
-  (lambda args
-    (match args
-      [('netlayer-name) 'underlay]
-      [args
-       (apply <- setup-netlayer-vow args)])))
-
-(define (^relay-netlayer _bcom mycapn controller-sref endpoint-sref)
+(define* (^relay-netlayer _bcom mycapn endpoint-sref controller-sref)
   "Constructs the relay netlayer which lives on the client.
 
 Takes three arguments at spawn time:
