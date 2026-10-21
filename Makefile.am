@@ -166,7 +166,8 @@ TESTS = tests/actor-lib/test-cell.scm \
         tests/utils/test-persistence.scm \
         tests/utils/test-crypto.scm \
         tests/utils/test-hashmap.scm \
-        tests/contrib/test-syrup.scm
+        tests/contrib/test-syrup.scm  \
+        tests/contrib/test-syrup-internals.scm
 
 if HAVE_GUILE_BSTRUCTS
 SOURCES += goblins/ocapn/netlayer/unix-domain-socket.scm \
