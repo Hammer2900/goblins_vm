@@ -125,21 +125,44 @@
     result))
 
 ;; Test with persistence
-(define store (make-memory-store))
-(define-values (vat network netlayer-one netlayer-two)
+(define persistence-registery-vat (spawn-vat))
+(define persistence-registry
+  (with-vat persistence-registery-vat
+    (spawn ^persistence-registry)))
+
+(define network-store (make-memory-store))
+(define-values (network-vat network)
   (spawn-persistent-vat
    fake-netlayer-env
    (lambda ()
-     (define network (spawn ^fake-network))
-     (values network
-             (spawn-fake-netlayer network "one")
-             (spawn-fake-netlayer network "two")))
-   store))
+     (spawn ^fake-network))
+   network-store
+   #:persistence-registry persistence-registry))
 
-(define-values (mycapn-one mycapn-two)
-  (with-vat vat
-    (values (spawn-mycapn netlayer-one)
-            (spawn-mycapn netlayer-two))))
+(define netlayer-store-a (make-memory-store))
+(define-values (vat-a netlayer-a)
+  (spawn-persistent-vat
+   fake-netlayer-env
+   (lambda ()
+     (spawn-fake-netlayer network "a"))
+   netlayer-store-a
+   #:persistence-registry persistence-registry))
+
+(define netlayer-store-b (make-memory-store))
+(define-values (vat-b netlayer-b)
+  (spawn-persistent-vat
+   fake-netlayer-env
+   (lambda ()
+     (spawn-fake-netlayer network "b"))
+   netlayer-store-b
+   #:persistence-registry persistence-registry))
+
+(define mycapn-a
+  (with-vat vat-a
+    (spawn-mycapn netlayer-a)))
+(define mycapn-b
+  (with-vat vat-b
+    (spawn-mycapn netlayer-b)))
 
 (define (^greeter bcom our-name)
   (lambda (their-name)
@@ -147,42 +170,67 @@
 
 ;; First check we can connect as per usual
 (define alice-sref
-  (with-vat vat
-    ($ mycapn-one 'register (spawn ^greeter "Alice") 'fake)))
+  (with-vat vat-a
+    ($ mycapn-a 'register (spawn ^greeter "Alice") 'fake)))
 
 (test-equal "Check we can use the fake netlayer before restore"
   #(ok "Hello Bob, my name is Alice")
   (resolve-vow-and-return-result
-   vat
+   vat-b
    (lambda ()
-     (<- (<- mycapn-two 'enliven alice-sref) "Bob"))))
+     (<- (<- mycapn-b 'enliven alice-sref) "Bob"))))
 
 ;; Now do the restore
-(vat-halt! vat)
-(define-values (vat* network* netlayer-one* netlayer-two*)
+(vat-halt! network-vat)
+(vat-halt! vat-a)
+(vat-halt! vat-b)
+(define persistence-registry*
+  (with-vat persistence-registery-vat
+    (spawn ^persistence-registry)))
+
+(define-values (network-vat* network*)
   (spawn-persistent-vat
    fake-netlayer-env
    (lambda ()
      (error "Should be restoring from the store"))
-   store))
+   network-store
+   #:persistence-registry persistence-registry*))
+
+(define-values (vat-a* netlayer-a*)
+  (spawn-persistent-vat
+   fake-netlayer-env
+   (lambda ()
+     (error "Should be restoring from the store"))
+   netlayer-store-a
+   #:persistence-registry persistence-registry*))
+
+(define-values (vat-b* netlayer-b*)
+  (spawn-persistent-vat
+   fake-netlayer-env
+   (lambda ()
+     (error "Should be restoring from the store"))
+   netlayer-store-b
+   #:persistence-registry persistence-registry*))
 
 ;; We only persisted the netlayer, not all of CapTP so set it
 ;; back up. The connections between netlayer-one and netlayer-two
 ;; should still be functioning (this is what we're testing)
-(define-values (mycapn-one* mycapn-two*)
-  (with-vat vat*
-    (values (spawn-mycapn netlayer-one*)
-            (spawn-mycapn netlayer-two*))))
+(define mycapn-a*
+  (with-vat vat-a*
+    (spawn-mycapn netlayer-a*)))
+(define mycapn-b*
+  (with-vat vat-b*
+    (spawn-mycapn netlayer-b*)))
 
 (define alice-sref*
-  (with-vat vat*
-    ($ mycapn-one* 'register (spawn ^greeter "Alice") 'fake)))
+  (with-vat vat-a*
+    ($ mycapn-a* 'register (spawn ^greeter "Alice") 'fake)))
 
 (test-equal "Check we can use the fake netlayer after restore"
   #(ok "Hello Bob, my name is Alice")
   (resolve-vow-and-return-result
-   vat*
+   vat-b*
    (lambda ()
-     (<- (<- mycapn-two* 'enliven alice-sref*) "Bob"))))
+     (<- (<- mycapn-b* 'enliven alice-sref*) "Bob"))))
 
 (test-end "test-fake-netlayer")

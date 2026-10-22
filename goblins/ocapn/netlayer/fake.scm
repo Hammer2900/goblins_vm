@@ -95,7 +95,7 @@
   main-beh)
 
 
-(define-actor (^fake-netlayer bcom our-name network new-conn-inbox)
+(define-actor (^fake-netlayer bcom our-name network new-conn-inbox new-conn-outbox)
   (define our-location (make-ocapn-peer 'fake our-name #f))
   (define-values (halted-vow halted-resolver)
     (spawn-promise-and-resolver))
@@ -143,7 +143,7 @@
   (define-values (new-conn-inbox new-conn-outbox _new-conn-halt)
     (spawn-inbox))
   (<-np network 'register name new-conn-outbox)
-  (spawn ^fake-netlayer name network new-conn-inbox))
+  (spawn ^fake-netlayer name network new-conn-inbox new-conn-outbox))
 
 (define fake-netlayer-env
   (persistence-env-compose
@@ -151,3 +151,4 @@
     `((((goblins ocapn netlayer fake) ^fake-netlayer) ,^fake-netlayer)
       (((goblins ocapn netlayer fake) ^fake-network) ,^fake-network)))
    inbox-env common-env))
+
