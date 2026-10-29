@@ -8,7 +8,7 @@
 ## No attribution is required and you are free to copy-paste and munge
 ## into your own project.
 
-bin_SCRIPTS = scripts/relay-server
+bin_SCRIPTS = goblins/cli/goblins
 
 # Handle substitution of fully-expanded Autoconf variables.
 do_subst = $(SED)					\
@@ -77,11 +77,12 @@ SOURCES = goblins.scm \
           goblins/define-actor.scm \
           goblins/inbox.scm \
           goblins/migrations.scm \
+          goblins/cli/commands.scm \
+          goblins/cli/relay-server.scm \
           goblins/ocapn/captp.scm \
           goblins/ocapn/captp-types.scm \
           goblins/ocapn/gc.scm \
           goblins/ocapn/ids.scm \
-          goblins/ocapn/relay-server.scm \
           goblins/ocapn/netlayer/base-port.scm \
           goblins/ocapn/netlayer/fake.scm \
           goblins/ocapn/netlayer/websocket.scm \
@@ -221,7 +222,6 @@ EXAMPLES = examples/cauldron.scm		\
            examples/try-captp-onion.scm		\
            examples/try-base-netlayer.scm	\
            examples/try-noise.scm \
-           examples/relay-server.scm \
            examples/unix-domain-socket-server.scm
 
 EXTRA_DIST += README.org \
@@ -261,9 +261,6 @@ CLEANFILES =					\
   $(TESTS:tests/%.scm=%.log) \
   $(TESTS:%.scm=%.xml)  \
   $(bin_SCRIPTS)
-
-# It needs to be installed but nothing further.
-scripts/relay-server: ;
 
 if HAVE_HOOT
 

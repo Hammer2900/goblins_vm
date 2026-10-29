@@ -143,9 +143,10 @@
    (lambda ()
      (<- alice-greeter-on-bob-vow "Bob"))))
 
-;; Check that account registering doesn't work on the "public" (un-incanted)
-;; relay admin object. (we didn't turn that feature on)
-(test-assert "Check ^relay-admin doesn't allow public registration when disabled"
+
+
+
+(test-assert "Check registering an account without incanter (public workflow)"
   (let ((vat (spawn-vat)))
     (match (resolve-vow-and-return-result
             vat
@@ -153,64 +154,19 @@
               (define-values (incanter relay-admin)
                 (spawn-relay-admin))
               (<- relay-admin 'register)))
-      (#('ok _) #f)
-      (#('err _) #t))))
-(test-assert "Check ^relay-admin doesn't allow ephemeral accounts when disabled"
+      (#('ok (? ocapn-sturdyref?)) #t)
+      (#('err _) #f))))
+
+(test-assert "Check registering an ephemeral account without incanter (public workflow)"
   (let ((vat (spawn-vat)))
     (match (resolve-vow-and-return-result
             vat
             (lambda ()
               (define-values (incanter relay-admin)
                 (spawn-relay-admin))
-              (<- relay-admin 'register-ephemeral)))
-      (#('ok _) #f)
-      (#('err _) #t))))
-
-(test-assert "Check registering a public account when enabled"
-  (let ((vat (spawn-vat)))
-    (match (resolve-vow-and-return-result
-            vat
-            (lambda ()
-              (define-values (incanter relay-admin)
-                (spawn-relay-admin #:allow-registrations? #t))
-              (<- relay-admin 'register)))
+              (<- relay-admin 'register 1)))
       (#('ok (? ocapn-sturdyref?)) #t)
       (#('err _) #f))))
-
-(test-assert "Check registering a ephemeral account when enabled"
-  (let ((vat (spawn-vat)))
-    (match (resolve-vow-and-return-result
-            vat
-            (lambda ()
-              (define-values (incanter relay-admin)
-                (spawn-relay-admin #:allow-ephemeral-accounts? #t))
-              (<- relay-admin 'register-ephemeral)))
-      (#('ok (? ocapn-sturdyref?)) #t)
-      (#('err _) #f))))
-
-(test-assert "Check registering an account after re-configuring to disable registrations"
-  (let ((vat (spawn-vat)))
-    (match (resolve-vow-and-return-result
-            vat
-            (lambda ()
-              (define-values (incanter relay-admin)
-                (spawn-relay-admin #:allow-registrations? #t))
-              (<-np incanter relay-admin 'configure #:allow-registrations? #f)
-              (<- relay-admin 'register)))
-      (#('ok (? ocapn-sturdyref?)) #f)
-      (#('err _) #t))))
-
-(test-assert "Check registering an ephemeral account after re-configuring to disable them"
-  (let ((vat (spawn-vat)))
-    (match (resolve-vow-and-return-result
-            vat
-            (lambda ()
-              (define-values (incanter relay-admin)
-                (spawn-relay-admin #:allow-ephemeral-accounts? #t))
-              (<-np incanter relay-admin 'configure #:allow-ephemeral-accounts? #f)
-              (<- relay-admin 'register-ephemeral)))
-      (#('ok (? ocapn-sturdyref?)) #f)
-      (#('err _) #t))))
 
 ;; TODO: Maybe move to (goblins utils hashmap)
 (define (hashmap-null? hm)
@@ -235,52 +191,13 @@
      vat
      (lambda ()
        (define-values (incanter relay-admin)
-         (spawn-relay-admin #:allow-ephemeral-accounts? #t
-                            #:ephemeral-account-lifespan 0.5))
-       (let*-on ((account (<- relay-admin 'register-ephemeral))
+         (spawn-relay-admin))
+       (let*-on ((account (<- relay-admin 'register 0.5))
                  (before-sweep-accounts ($ incanter relay-admin 'get-accounts))
                  (_ (timeout 0.6))
                  (after-sweep-accounts ($ incanter relay-admin 'get-accounts)))
          (list (hashmap-length before-sweep-accounts)
                (hashmap-length after-sweep-accounts)))))))
-
-(test-assert "Check account sweep changes after reconfiguration"
-  (let ((vat (spawn-vat)))
-    (match (resolve-vow-and-return-result
-            vat
-            (lambda ()
-              (define-values (incanter relay-admin)
-                (spawn-relay-admin #:allow-ephemeral-accounts? #t))
-              (define set-new-lifespan-vow
-                (let*-on ((account (<- relay-admin 'register-ephemeral))
-                          (accounts (<- incanter relay-admin 'get-accounts)))
-                  (when (hashmap-null? accounts)
-                    (error "Should be an ephemeral account"))
-                  ;; Set the lifespan of ephemeral accounts to 500ms
-                  ($ incanter relay-admin 'configure #:ephemeral-account-lifespan 0.5)
-                  #t))
-              (let*-on ((_ set-new-lifespan-vow)
-                        (_ (timeout 0.6))
-                        (accounts (<- incanter relay-admin 'get-accounts)))
-                accounts)))
-      (#('ok (? hashmap-null?)) #t)
-      (_ #f))))
-
-(test-equal "Check all ephemeral accounts are removed after disabled"
-  #(ok 0)
-  (let ((vat (spawn-vat)))
-    (resolve-vow-and-return-result
-     vat
-     (lambda ()
-       (define-values (incanter relay-admin)
-         (spawn-relay-admin #:allow-ephemeral-accounts? #t))
-       (let-on ((account (<- relay-admin 'register-ephemeral)))
-         (when (hashmap-null? ($ incanter relay-admin 'get-accounts))
-           (error "There should be an ephemeral account"))
-         (<-np incanter relay-admin 'configure #:allow-ephemeral-accounts? #f)
-         (on (<- incanter relay-admin 'get-accounts)
-             hashmap-length
-             #:promise? #t))))))
 
 ;; Check aurie, sometimes issues only show themselves after multiple restores.
 ;; Lets persist, restore two times and then check all works.
@@ -308,9 +225,7 @@
      (define-values (warden incanter)
        (spawn-warding-pair))
      (values incanter
-             (spawn ^relay-admin warden mycapn 'fake 'fake
-                    #:allow-registrations? #t
-                    #:allow-ephemeral-accounts? #t)))
+             (spawn ^relay-admin warden mycapn 'fake 'fake)))
    server-store
    #:persistence-registry persistence-registry))
 
@@ -332,7 +247,7 @@
   (match (resolve-vow-and-return-result
           server-vat
           (lambda ()
-            (<- relay-admin 'register-ephemeral)))
+            (<- relay-admin 'register 1)))
     (#('ok (? ocapn-sturdyref? sref)) sref)))
 
 (vat-halt! server-vat)
@@ -374,37 +289,41 @@
    server-store
    #:persistence-registry persistence-registry2))
 
-(define client-vat (spawn-vat))
-(define client-netlayer
-  (with-vat client-vat
-    (spawn-fake-netlayer network2 "client-netlayer")))
-(define client-mycapn
-  (with-vat client-vat
-    (spawn-mycapn client-netlayer)))
-
 (test-assert "Can setup relay-netlayer from admin made account after restore"
-  (match (resolve-vow-and-return-result
-          client-vat
-          (lambda ()
-            (fetch-and-spawn-relay-netlayer client-netlayer client-mycapn
-                                            admin-made-account)))
-    (#('ok (? live-refr?)) #t)))
+  (let* ((client-vat (spawn-vat))
+         (client-netlayer
+          (with-vat client-vat (spawn-fake-netlayer network2 "client-netlayer")))
+         (client-mycapn (with-vat client-vat (spawn-mycapn client-netlayer))))
+    (match (resolve-vow-and-return-result
+            client-vat
+            (lambda ()
+              (fetch-and-spawn-relay-netlayer client-netlayer client-mycapn
+                                              admin-made-account)))
+      (#('ok (? live-refr?)) #t))))
 
 (test-assert "Can setup relay-netlayer from user made account after restore"
-  (match (resolve-vow-and-return-result
-          client-vat
-          (lambda ()
-            (fetch-and-spawn-relay-netlayer client-netlayer client-mycapn
-                                            user-made-account)))
-    (#('ok (? live-refr?)) #t)))
+  (let* ((client-vat (spawn-vat))
+         (client-netlayer
+          (with-vat client-vat (spawn-fake-netlayer network2 "client-netlayer")))
+         (client-mycapn (with-vat client-vat (spawn-mycapn client-netlayer))))
+    (match (resolve-vow-and-return-result
+            client-vat
+            (lambda ()
+              (fetch-and-spawn-relay-netlayer client-netlayer client-mycapn
+                                              user-made-account)))
+      (#('ok (? live-refr?)) #t))))
 
 (test-assert "Check ephemeral accounts do not suvive persistence"
-  (match (resolve-vow-and-return-result
-          client-vat
-          (lambda ()
-            (fetch-and-spawn-relay-netlayer client-netlayer client-mycapn
-                                            ephemeral-account)))
-    (#('err _) #t)))
+  (let* ((client-vat (spawn-vat))
+         (client-netlayer
+          (with-vat client-vat (spawn-fake-netlayer network2 "client-netlayer")))
+         (client-mycapn (with-vat client-vat (spawn-mycapn client-netlayer))))
+    (match (resolve-vow-and-return-result
+            client-vat
+            (lambda ()
+              (fetch-and-spawn-relay-netlayer client-netlayer client-mycapn
+                                              ephemeral-account)))
+      (#('err _) #t))))
 
 (test-assert "Check both accounts enumerate after restoration"
   (match (resolve-vow-and-return-result
@@ -432,7 +351,7 @@
   (match (resolve-vow-and-return-result
           server-vat2
           (lambda ()
-            (<- relay-admin2 'register-ephemeral)))
+            (<- relay-admin2 'register 1)))
     (#('ok (? ocapn-sturdyref?)) #t)))
 
 (test-end "test-relay-utils")

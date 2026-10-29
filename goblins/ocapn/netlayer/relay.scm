@@ -442,5 +442,5 @@ Takes three arguments at spawn time:
      (((goblins ocapn netlayer relay) ^swappable-promise) ,^swappable-promise)
      (((goblins ocapn netlayer relay) ^relay-endpoint) ,^relay-endpoint)
      (((goblins ocapn netlayer relay) ^relay-controller) ,^relay-controller)
-     (((goblins ocapn netlayer relay) ^underlay-netlayer) ,^relay-netlayer))
+     (((goblins ocapn netlayer relay) ^underlay-netlayer) ,^underlay-netlayer))
    #:extends (list cell-env facet-env)))

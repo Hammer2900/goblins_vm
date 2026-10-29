@@ -13,7 +13,7 @@
 ;;; See the License for the specific language governing permissions and
 ;;; limitations under the License.
 
-(define-module (goblins ocapn relay-server)
+(define-module (goblins cli relay-server)
   #:use-module (goblins)
   #:use-module (goblins vat)
   #:use-module (goblins actor-lib facet)
@@ -26,7 +26,6 @@
   #:use-module (goblins ocapn ids)
   #:use-module (goblins ocapn captp)
   #:use-module (goblins ocapn netlayer onion)
-  #:use-module (goblins ocapn netlayer tcp-tls)
   #:use-module (goblins ocapn netlayer websocket)
   #:use-module (goblins ocapn netlayer relay)
   #:use-module (goblins ocapn netlayer relay-utils)
@@ -35,7 +34,7 @@
   #:use-module (ice-9 match)
   #:use-module (ice-9 getopt-long)
   #:use-module (srfi srfi-11)
-  #:export (start-relay-server))
+  #:export (relay-server-command))
 
 
 (define (ocapn-sturdyref->netlayer-name sref)
@@ -58,24 +57,6 @@
              (option-ref options 'websocket-verify-certificates? #f)
              #t)))))
 
-(define* (make-spawn-relay-server netlayer-name netlayer-options
-                                  #:key
-                                  (allow-registrations? #t)
-                                  (allow-ephemeral-accounts? #t))
-  (lambda ()
-    (define netlayer
-      (spawn-netlayer-by-name netlayer-name netlayer-options))
-    (define mycapn
-      (spawn-mycapn netlayer))
-    (define-values (warden incanter)
-      (spawn-warding-pair))
-    (values netlayer mycapn
-            (spawn ^relay-admin
-                   warden mycapn netlayer-name
-                   #:allow-registrations? allow-registrations?
-                   #:allow-ephemeral-accounts? allow-ephemeral-accounts?))))
-
-
 (define (option-boolean? val)
   (match val
     ((or "t" "f" "true" "false") #t)
@@ -89,14 +70,16 @@
 
 (define options-spec
   `((help (single-char #\h) (value #f))
-    ;; New-relay options
-    (allow-registrations (value #f))
-    (allow-ephemeral-accounts (value #f))
     ;; Websocket netlayer options
     (websocket-host (value #t))
     (websocket-port (value #t))
     (websocket-encrypted (value #t) (predicate ,option-boolean?))
     (websocket-verify-certificates (value #t))))
+
+(define server-persistence-env
+  (persistence-env-compose relay-utils-env
+                           websocket-netlayer-env
+                           onion-netlayer-env))
 
 (define (display-help)
   (format #t "Relay server:
@@ -106,8 +89,6 @@ General options:
 
 Main options:
 new-relay <client-netlayer> <federation-netlayer>
-          [--allow-registrations]                          Sets up a new relay on specified netlayer.
-          [--allow-ephemeral-accounts]
           [<netlayer options> ...]
 register-account <relay-server-sturdyref> <account-name>   Adds a new account with given name.
 list-accounts <relay-server-sturdyref>                     Lists all account names configured by this admin.
@@ -119,12 +100,11 @@ Currently supported netlayers:
             --websocket-verify-certificates=true/false     Defaults: true
 - onion\n
 
-To have the server persist itself, specify the path to the syrup store using the
-RELAY_SERVER_STORE environment variable.\n"))
+To have the server persist itself, specify the path to a directory for the
+bloblin store using the RELAY_SERVER_STORE environment variable.\n"))
 
-(define (start-relay-server command-line-arguments)
+(define (relay-server-command command-line-arguments)
   (define bloblin-store-path (getenv "RELAY_SERVER_STORE"))
-  
 
   (define options (getopt-long command-line-arguments options-spec))
   (cond
@@ -133,7 +113,7 @@ RELAY_SERVER_STORE environment variable.\n"))
     (define can-quit? (make-condition))
     ;; Rather unintuitively '() gives you the positional arguments.
     (match (option-ref options '() #f)
-      (("new-relay" client-netlayer-str federation-netlayer-str)
+      (("relay" "new-relay" client-netlayer-str federation-netlayer-str)
        (define client-netlayer-name (string->symbol client-netlayer-str))
        (define federation-netlayer-name (string->symbol federation-netlayer-str))
        (define (spawn-relay-server)
@@ -147,26 +127,21 @@ RELAY_SERVER_STORE environment variable.\n"))
          (define-values (warden incanter)
            (spawn-warding-pair))
          (define relay-admin
-           (spawn ^relay-admin warden mycapn
-                  client-netlayer-name
-                  federation-netlayer-name
-                  #:allow-registrations?
-                  (option-ref options 'allow-registrations #f)
-                  #:allow-ephemeral-accounts?
-                  (option-ref options 'allow-ephemeral-accounts #f)))
-         (values mycapn incanter relay-admin))
-       (define-values (vat mycapn incanter relay-admin)
+           (spawn ^relay-admin warden mycapn client-netlayer-name
+                  federation-netlayer-name))
+         (values mycapn relay-admin (enchant incanter relay-admin)))
+       (define-values (vat mycapn relay-admin enchanted-ra)
          (cond (bloblin-store-path
                 (spawn-persistent-vat
-                 relay-utils-env
+                 server-persistence-env
                  spawn-relay-server
                  (make-bloblin-store bloblin-store-path)))
                (else
                 (define vat (spawn-vat #:name "Relay server"))
                 (define-values (mycapn incanter relay-admin)
                   (call-with-vat vat spawn-relay-server))
-                (values vat mycapn incanter relay-admin))))
-       (define enchanted-ra (with-vat vat (enchant incanter relay-admin)))
+                (values vat mycapn relay-admin
+                        (enchant incanter relay-admin)))))
        (with-vat vat
          (let-on ((public-ra-sref
                    (<- mycapn 'register relay-admin client-netlayer-name))
@@ -174,7 +149,7 @@ RELAY_SERVER_STORE environment variable.\n"))
                    (<- mycapn 'register enchanted-ra client-netlayer-name)))
            (format #t "Public Relay: ~a\n" (ocapn-id->string public-ra-sref))
            (format #t "Admin Relay: ~a\n" (ocapn-id->string enchanted-ra-sref)))))
-      (("register-account" relay-admin account-name)
+      (("relay" "register-account" relay-admin account-name)
        (define relay-admin-sref (string->ocapn-id relay-admin))
        (define vat (spawn-vat #:name "Relay server command"))
        (with-vat vat
@@ -185,8 +160,9 @@ RELAY_SERVER_STORE environment variable.\n"))
          (define mycapn (spawn-mycapn netlayer))
          (define relay-admin-vow (<- mycapn 'enliven relay-admin-sref))
          (let-on ((account (<- relay-admin-vow 'register-account account-name)))
-           (format #t "Account: ~a\n" (ocapn-id->string account)))))
-      (("list-accounts" relay-admin netlayers ..)
+           (format #t "Account: ~a\n" (ocapn-id->string account))
+           (signal-condition! can-quit?))))
+      (("relay" "list-accounts" relay-admin)
        (define relay-admin-sref (string->ocapn-id relay-admin))
        (define vat (spawn-vat #:name "Relay server command"))
        (with-vat vat
@@ -197,9 +173,14 @@ RELAY_SERVER_STORE environment variable.\n"))
          (define mycapn (spawn-mycapn netlayer))
          (define relay-admin-vow (<- mycapn 'enliven relay-admin-sref))
          (let-on ((accounts (<- relay-admin-vow 'get-accounts)))
+           (format #t "Accounts:\n")
            (hashmap-for-each
             (match-lambda*
-              ((label (type _ _ _)) (pk 'label label type)))
+              ((label (type _ _ _ expiry))
+               (if expiry
+                   (format #t "- ~a (type: ~a) expires on ~a\n"
+                           label type (strftime "%c" (localtime expiry)))
+                   (format #t "- ~a (type: ~a)\n" label type))))
             accounts)
            (signal-condition! can-quit?))))
       (_

@@ -81,7 +81,7 @@
    ((remove refr)
     (define storable-id (refr->storable-id refr))
     (match (hashmap-ref storable-id->swiss-num storable-id)
-      (#f  (error "Refr not registered with registry" refr))
+      (#f  (error "no such object in registry" refr))
       (swiss-num
        (let ((hashed-swiss-num (hash swiss-num)))
          (bcom (^registry bcom

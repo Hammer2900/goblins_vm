@@ -1034,17 +1034,14 @@ many ways this could be done, however other relay server designs are
 left to the reader to build. The relay utilities are available in the
 @code{(goblins ocapn netlayer relay-utils)} module, and an example of
 how to use them to run a daemon can be found in
-@code{scripts/relay-server.in}, as shipped with Spritely Goblins.
+@code{goblins/cli/relay-server.scm}, as shipped with Spritely Goblins.
 
 @code{(goblins ocapn netlayer relay-utils)} provides the following
 procedures:
 
 @deffn {Constructor} ^relay-admin bcom warden mycapn @
                                   client-netlayer-name @
-                                  federation-netlayer-name @
-                                  #:allow-registration? @
-                                  #:allow-ephemeral-accounts? @
-                                  #:ephemeral-account-lifespan
+                                  federation-netlayer-name
 
 This constructs an admin actor to manage relay accounts. This is to be
 used on the ``server'' side.
@@ -1067,20 +1064,6 @@ clients will use to connect with the relay.
 @item
 @var{federation-netlayer-name} The name of the netlayer (symbol) which
 other relays will use to connect with the relay.
-@item
-@var{#:allow-registration?} configures if public registrations are
-enabled or not. When set to @code{#t} the public @code{register}
-behaviour is enabled allowing new accounts to be registered. Defaults
-to @code{#f}.
-@item
-@var{#:allow-ephemeral-accounts?} configures if ephemeral accounts can
-be registered on this relay. When set to @code{#t} the public
-@code{register-ephemeral} method is enabled allowing new ephemeral
-accounts to be registered. Defaults to @code{#f}.
-@item
-@var{#:ephemeral-account-lifespan} when
-@var{allow-ephemeral-accounts?} is enabled, the ephemeral accounts
-will be removed after @var{ephemeral-account-lifespan} seconds.
 @end itemize
 
 The object provides many methods, some of which are considered admin
@@ -1099,30 +1082,17 @@ sturdyrefs registered against the @var{client-netlayer-name} netlayer.
 @item
 @code{get-accounts} Returns a hashmap containing the accounts with some account
 data.
-@item
-@code{configure #:allow-registrations? #:allow-ephemeral-accounts? #:ephemeral-account-lifespan}
-Reconfigure the admin object to the new settings.
 @end itemize
 
 Remaining behaviour:
 
 @itemize
 @item
-@code{allow-registrations?} Returns if registrations are allowed to be
-registered.
-@item
-@code{allow-ephemeral-accounts?} Returns if ephemeral accoutns are allowed to be
-registered.
-@item
-@code{register} Registers a new account on the relay returning the sturdyref to
-a read-only cell which contains the endpoint and controller sturdyrefs of the
-new account.
-@item
-@code{register-ephemeral} Registers a new ephemeral account returning the
-sturdyref of a read-only cell containing the endpoint and controller sturdyrefs
-of the new account. This account will be removed after the
-@var{ephemeral-account-lifespan} time has elapsed. This should only be used for
-short lived accounts.
+@code{register expiration} Registers a new account on the relay returning the
+sturdyref to a read-only cell which contains the endpoint and controller
+sturdyrefs of the new account. The @var{expiration} in seconds determines when
+the account is automatically-removed. If @var{expiration} is set to @code{#f},
+the account will not expire.
 @end itemize
 @end deffn
 

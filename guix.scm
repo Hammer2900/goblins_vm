@@ -37,40 +37,6 @@
               (string-contains file my-string))
             (list ".git" ".dir-locals.el" "guix.scm"))))
 
-(define guile-hoot*
-  (let ((commit "28de0a2b669b629447f39806694525fa19171c08")
-        (revision "1"))
-    (package
-      (inherit guile-hoot)
-      (version (string-append (package-version guile-hoot)
-                              "-" (string-take commit 7)))
-      (source (origin
-                (method git-fetch)
-                (uri (git-reference
-                       (url "https://codeberg.org/spritely/hoot.git")
-                       (commit commit)))
-                (sha256
-                 (base32
-                  "0wpmpw27kn49d0g3ys0gzzinxlifrfhbq709aqbbqzb8i9ar6ln5"))))
-      (arguments
-       (append (package-arguments guile-hoot) (list #:tests? #f))))))
-
-(define guile-gnutls*
-  (let ((commit "dd4897fff79364692968295a114e8552c4c4fc71"))
-    (package
-     (inherit guile-gnutls)
-     (version (string-append (package-version guile-gnutls)
-                             "-" (string-take commit 7)))
-     (source (origin
-              (method git-fetch)
-              (uri (git-reference
-                    (url "https://codeberg.org/tsyesika/guile-gnutls.git")
-                    (commit commit)))
-              (sha256
-               (base32
-                "0iqji4yf02a3981lhla44ia0na4cj6shf5c3850n47k90hcjscv1")))))))
-
-
 (define guile-noise
   (package
    (name "guile-noise")
@@ -84,10 +50,10 @@
              (base32 "1bwi9kasm146sgwqjgmgclwlzvyan8738xdwmcivkjy380zdnlny"))))
    (build-system gnu-build-system)
    (native-inputs (list autoconf automake pkg-config))
-   (inputs (list guile-next guile-hoot*
+   (inputs (list guile-next guile-hoot
                  ;; Only needed to run test suite (make check)
                  node python python-cryptography))
-   (propagated-inputs (list guile-gnutls*))
+   (propagated-inputs (list guile-gnutls))
    (synopsis "Guile implementation of the Noise Protocol")
    (description "Guile implementation of the Noise Protocol")
    (home-page "https://codeberg.org/spritely/guile-noise")
@@ -115,7 +81,7 @@
          guile-lib guile-syntax-highlight lcov tor))
   (inputs (list graphviz guile-next guile-hoot))
   (propagated-inputs
-   (list guile-fibers guile-gnutls* guile-noise guile-websocket guile-bstructs))
+   (list guile-fibers guile-gnutls guile-noise guile-websocket guile-bstructs))
   (synopsis "Transactional, distributed object programming environment")
   (description
    "Spritely Goblins is a transactional, distributed object programming
