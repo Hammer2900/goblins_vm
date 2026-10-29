@@ -652,6 +652,18 @@ Return a freshly generated X.509 certificate for @var{key}.
 
 @end deffn
 
+@deffn {Procedure} load-tls-private-key file-name
+
+Load the PEM encoded X.509 private key in @var{file-name}.
+
+@end deffn
+
+@deffn {Procedure} load-tls-certificate file-name
+
+Load the PEM encoded X.509 certificate in @var{file-name}.
+
+@end deffn
+
 @defvr {Persistence Environment} tcp-tls-netlayer-env
 @end defvr
 
@@ -851,6 +863,18 @@ enforce strict TLS certificate verification when in a secure context.
 Unencrypted (@code{ws://}) WebSocket connections are only allowed in
 specific insecure contexts such as when using a local development
 server.
+@end deffn
+
+@deffn {Procedure} load-tls-private-key file-name
+
+Load the PEM encoded X.509 private key in @var{file-name}.
+
+@end deffn
+
+@deffn {Procedure} load-tls-certificate file-name
+
+Load the PEM encoded X.509 certificate in @var{file-name}.
+
 @end deffn
 
 @defvr {Persistence Environment} websocket-netlayer-env

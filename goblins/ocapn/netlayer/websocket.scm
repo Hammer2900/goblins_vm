@@ -15,10 +15,13 @@
 ;;; limitations under the License.
 
 (define-library (goblins ocapn netlayer websocket)
-  (export generate-tls-private-key
+  (export ^websocket-netlayer
+          websocket-netlayer-env
+          ;; Re-export from (goblins utils tls)
+          generate-tls-private-key
           generate-tls-certificate
-          ^websocket-netlayer
-          websocket-netlayer-env)
+          load-tls-private-key
+          load-tls-certificate)
   (import (except (guile) spawn)
           (fibers)
           (fibers conditions)
@@ -41,6 +44,7 @@
           (goblins utils crypto)
           (goblins utils hashmap)
           (goblins utils js-data)
+          (goblins utils tls)
           (ice-9 match)
           (except (rnrs bytevectors) bytevector-copy)
           (only (scheme base) bytevector-copy)
@@ -49,7 +53,6 @@
   (cond-expand
    (guile
     (import (fibers io-wakeup)
-            (goblins ocapn netlayer tcp-tls)
             (ice-9 ports internal) ; this is a hack
             (web client)
             (web request)
@@ -73,14 +76,6 @@
     (define unmarshallers
       (cons unmarshall::init:peer-auth
             captp:unmarshallers))
-
-    (cond-expand
-     (guile)
-     (hoot
-      (define (generate-tls-private-key)
-        (error "Cannot generate TLS private key on Hoot"))
-      (define (generate-tls-certificate key)
-        (error "Cannot generate TLS certificate on Hoot"))))
 
     (define (use-nonblocking-i/o port)
       (cond-expand

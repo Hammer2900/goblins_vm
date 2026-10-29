@@ -21,17 +21,20 @@
   #:use-module (goblins ocapn netlayer base-port)
   #:use-module (goblins actor-lib cell)
   #:use-module (goblins actor-lib io)
-  #:use-module (goblins utils hashmap)
-  #:use-module (goblins utils crypto)
   #:use-module (goblins utils base32)
+  #:use-module (goblins utils crypto)
+  #:use-module (goblins utils hashmap)
+  #:use-module (goblins utils tls)
   #:use-module (ice-9 binary-ports)
   #:use-module (ice-9 exceptions)
   #:use-module (ice-9 match)
   #:use-module (ice-9 suspendable-ports)
   #:use-module (rnrs bytevectors)
-  #:export (generate-tls-private-key
-            generate-tls-certificate
-            ^tcp-tls-netlayer
+  #:re-export (generate-tls-private-key
+               generate-tls-certificate
+               load-tls-private-key
+               load-tls-certificate)
+  #:export (^tcp-tls-netlayer
             tcp-tls-netlayer-env))
 
 (define (use-nonblocking-i/o port)
@@ -58,71 +61,6 @@
        (use-nonblocking-i/o sock)
        (connect sock family address port)
        sock))))
-
-;; The GnuTLS bindings used for generating keys/certs are only in
-;; bleeding edge versions of guile-gnutls, so we cannot rely on them
-;; being there.
-(define (gnutls-procedure-exists? name)
-  (variable? (module-variable (resolve-interface '(gnutls)) name)))
-
-(define (%generate-tls-private-key)
-  ;; For compatibility with older Guile-GnuTLS versions that do not
-  ;; support generation and exporting, we have to hand back a
-  ;; bytevector that can be imported into a TLS session.
-  (let ((key (generate-x509-private-key pk-algorithm/rsa 4096 '())))
-    (export-x509-private-key key x509-certificate-format/pem)))
-
-(define (generate-tls-private-key)
-  "Return a freshly generated X.509 private key."
-  (if (gnutls-procedure-exists? 'generate-x509-private-key)
-      (%generate-tls-private-key)
-      (throw 'missing-gnutls-binding 'generate-x509-private-key)))
-
-(define (%generate-tls-certificate key)
-  (let* ((cert (make-x509-certificate))
-         ;; We're stuck with bytevectors for holding key data so that
-         ;; we stay compatible with older versions of Guile-GnuTLS,
-         ;; hence this silly re-import here.
-         (key* (import-x509-private-key key x509-certificate-format/pem))
-         (activation-time (current-time))
-         ;; The maximum possible expiration time, at least the maximum
-         ;; allowed by GnuTLS, is the end of the UNIX epoch in 2038.
-         ;; Not great!
-         (expiration-time 2147483647))
-    (set-x509-certificate-version! cert 3)
-    (set-x509-certificate-activation-time! cert activation-time)
-    (set-x509-certificate-expiration-time! cert expiration-time)
-    ;; A lot of this data is just boilerplate so that all the
-    ;; necessary fields are populated for the certificate to be valid.
-    (set-x509-certificate-dn-by-oid! cert oid/x520-country-name "US")
-    (set-x509-certificate-dn-by-oid! cert oid/x520-state-or-province-name "DE")
-    (set-x509-certificate-dn-by-oid! cert oid/x520-locality-name "Lewes")
-    (set-x509-certificate-dn-by-oid! cert oid/x520-common-name "CapTP")
-    (set-x509-certificate-dn-by-oid! cert oid/x520-organization-name "Spritely")
-    (set-x509-certificate-dn-by-oid! cert oid/x520-organizational-unit-name
-                                     "Goblins")
-    ;; We aren't using CAs.
-    (set-x509-certificate-ca-status! cert #f)
-    ;; Likewise, the serial number is really only important for CAs.
-    ;; The cert has to have one, though, so we hardcode a silly
-    ;; message that conforms to the conventional 20 byte length.
-    (set-x509-certificate-serial! cert (string->utf8 "OCapN cereal number!"))
-    ;; Add the private key and self-sign the cert.
-    (set-x509-certificate-key! cert key*)
-    (set-x509-certificate-key-usage! cert (list key-usage/digital-signature
-                                                key-usage/key-encipherment))
-    (set-x509-certificate-subject-key-id! cert (x509-certificate-key-id cert))
-    (sign-x509-certificate! cert cert key*)
-    ;; For compatibility with older Guile-GnuTLS versions that do not
-    ;; support generation and exporting, we have to hand back a
-    ;; bytevector that can be imported into a TLS session.
-    (export-x509-certificate cert x509-certificate-format/pem)))
-
-(define (generate-tls-certificate key)
-  "Return a freshly generated X.509 certificate for KEY."
-  (if (gnutls-procedure-exists? 'make-x509-certificate)
-      (%generate-tls-certificate key)
-      (throw 'missing-gnutls-binding 'make-x509-certificate)))
 
 (define (tls-retry proc tls-session)
   (define (handle-error exception)

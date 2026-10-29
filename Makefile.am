@@ -110,6 +110,7 @@ SOURCES = goblins.scm \
           goblins/utils/define-applicable-record-type.scm \
           goblins/utils/error-handling.scm \
           goblins/utils/graphviz.scm \
+          goblins/utils/tls.scm \
           goblins/utils/random-name.scm \
           goblins/utils/simple-dispatcher.scm \
           goblins/utils/simple-sealers.scm \
@@ -145,6 +146,7 @@ TESTS = tests/actor-lib/test-cell.scm \
         tests/ocapn/test-captp.scm \
         tests/ocapn/netlayer/test-fake.scm \
         tests/ocapn/netlayer/test-websocket.scm \
+        tests/ocapn/netlayer/test-tcp-tls.scm \
         tests/ocapn/netlayer/test-libp2p.scm \
         tests/ocapn/netlayer/test-relay.scm \
         tests/ocapn/netlayer/test-relay-utils.scm \
