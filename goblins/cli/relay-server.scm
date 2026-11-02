@@ -212,10 +212,10 @@ remove-account RELAY-ADMIN-SREF ACCOUNT-LABEL  Remove an account with label
                spawn-relay-server
                (make-bloblin-store (assoc-ref options 'bloblin-store-dir))))
               (else
-               (define vat (spawn-vat #:name "Relay server"))
-               (define-values (mycapn relay-admin enchanted-relay-admin)
-                 (call-with-vat vat spawn-relay-server))
-               (values vat mycapn relay-admin enchanted-relay-admin))))
+               (let*-values (((vat) (spawn-vat #:name "Relay server"))
+                             ((mycapn relay-admin enchanted-relay-admin)
+                              (call-with-vat vat spawn-relay-server)))
+                 (values vat mycapn relay-admin enchanted-relay-admin)))))
      (with-vat vat
        (let-on ((public-ra-sref
                  (<- mycapn 'register relay-admin client-netlayer-name))
