@@ -77,7 +77,7 @@ SOURCES = goblins.scm \
           goblins/define-actor.scm \
           goblins/inbox.scm \
           goblins/migrations.scm \
-          goblins/cli/commands.scm \
+          goblins/cli.scm \
           goblins/cli/relay-server.scm \
           goblins/ocapn/captp.scm \
           goblins/ocapn/captp-types.scm \

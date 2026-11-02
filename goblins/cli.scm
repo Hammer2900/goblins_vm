@@ -11,18 +11,18 @@
 ;;; WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 ;;; See the License for the specific language governing permissions and
 ;;; limitations under the License.
-(define-module (goblins cli commands)
+(define-module (goblins cli)
   #:use-module (goblins cli relay-server)
   #:use-module (ice-9 match)
-  #:export (goblins-command))
+  #:export (goblins-main))
 
 (define (display-help)
   (format #t "Goblins commands:\n")
   (format #t "  - relay\n")
   (format #t "You can use \"goblins help <command>\" to display help for a specific command\n"))
 
-(define (goblins-command arguments)
+(define (goblins-main arguments)
   (match arguments
     ((_ "relay" relay-args ...)
-     (relay-server-command arguments))
+     (relay-server-command relay-args))
     (_ (display-help))))

@@ -184,7 +184,7 @@
    0
    hm))
 
-(test-equal "Check ephemeral account sweep clears accounts"
+(test-equal "Check ephemeral accounts are removed after expiry time"
   #(ok (1 0))
   (let ((vat (spawn-vat)))
     (resolve-vow-and-return-result
@@ -193,11 +193,11 @@
        (define-values (incanter relay-admin)
          (spawn-relay-admin))
        (let*-on ((account (<- relay-admin 'register 0.5))
-                 (before-sweep-accounts ($ incanter relay-admin 'get-accounts))
+                 (before-accounts ($ incanter relay-admin 'get-accounts))
                  (_ (timeout 0.6))
-                 (after-sweep-accounts ($ incanter relay-admin 'get-accounts)))
-         (list (hashmap-length before-sweep-accounts)
-               (hashmap-length after-sweep-accounts)))))))
+                 (after-accounts ($ incanter relay-admin 'get-accounts)))
+         (list (hashmap-length before-accounts)
+               (hashmap-length after-accounts)))))))
 
 ;; Check aurie, sometimes issues only show themselves after multiple restores.
 ;; Lets persist, restore two times and then check all works.
