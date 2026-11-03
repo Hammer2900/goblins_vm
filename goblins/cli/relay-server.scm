@@ -47,13 +47,15 @@
     ((or "onion" 'onion)
      (apply spawn ^onion-netlayer (assoc-ref options 'onion-netlayer-args)))
     ((or "websocket" 'websocket)
-     (spawn ^websocket-netlayer
-            #:host (assoc-ref options 'websocket-host)
-            #:port (assoc-ref options 'websocket-port)
-            #:encrypted? (assoc-ref options 'websocket-encrypted?)
-            #:verify-certificates?
-            (assoc-ref options 'websocket-verify-vertificates?)
-            #:url (assoc-ref options 'websocket-url)))))
+     (let ((args `(#:host ,(assoc-ref options 'websocket-host)
+                   #:port ,(assoc-ref options 'websocket-port)
+                   #:encrypted? ,(assoc-ref options 'websocket-encrypted?)
+                   #:verify-certificates?
+                   ,(assoc-ref options 'websocket-verify-vertificates?)
+                   ,@(if (assoc-ref options 'websocket-url)
+                         (list #:url (assoc-ref options 'websocket-url))
+                         '()))))
+       (apply spawn ^websocket-netlayer args)))))
 
 (define (print-help port)
   (format #t "Usage: goblins relay [OPTION...] COMMAND ARGS...
@@ -137,12 +139,12 @@ remove-account RELAY-ADMIN-SREF ACCOUNT-LABEL  Remove an account with label
                   (alist-cons 'websocket-url arg result)))))
 
 (define %websocket-defaults
-  '((websocket-host "127.0.0.1")
-    (websocket-port 0)
-    (websocket-max-peers 32)
-    (websocket-verify-certificates? #t)
-    (websocket-encryption? #t)
-    (websocket-url #f)))
+  '((websocket-host . "127.0.0.1")
+    (websocket-port . 0)
+    (websocket-max-peers . 32)
+    (websocket-verify-certificates? . #t)
+    (websocket-encryption? . #t)
+    (websocket-url . #f)))
 
 (define %onion-options
   (list (option '("tor-control-path") #t #f
