@@ -383,13 +383,14 @@
   (with-vat a-vat
     ($ a-mycapn 'register (spawn ^echo) 'fake)))
 
-(test-equal "Test we're able to send cons cells across CapTP"
-  #(ok (a . b))
-  (resolve-vow-and-return-result
-   b-vat
-   (lambda ()
-     (let ((echo-vow (<- b-mycapn 'enliven echo-sref)))
-       (on (<- echo-vow '(a . b)) #:promise? #t)))))
+(define some-refr (with-vat b-vat (spawn ^echo)))
+(define cons-cell-to-send (cons some-refr 'echo))
+(test-assert "Test can send cons cells over CapTP"
+  (match (resolve-vow-and-return-result
+          b-vat
+          (lambda ()
+            (<- (<- b-mycapn 'enliven echo-sref) cons-cell-to-send)))
+    (#('ok (echoed-refr . 'echo)) (eq? echoed-refr some-refr))))
 
 ;; Test we can serialize ghashes with objects inside.
 (define echo-on-b
