@@ -433,7 +433,8 @@
       [(obj ...)
        (map incoming-post-unmarshall! obj)]
       [($ <tagged> 'pair (head tail))
-       (cons head tail)]
+       (cons (incoming-post-unmarshall! head)
+             (incoming-post-unmarshall! tail))]
       [($ <tagged> 'vec vec-data)
        (define vec (make-vector (length vec-data)))
        (let lp ((index 0)
